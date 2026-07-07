@@ -5834,3 +5834,87 @@ impl<T: PdfiumLibraryBindings> PdfiumLibraryBindings for ThreadSafePdfiumBinding
         self.bindings.FPDFCatalog_SetLanguage(document, language)
     }
 }
+
+#[cfg(test)]
+#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(feature = "static"))]
+mod tests {
+    use super::{ThreadSafePdfiumBindings, PDFIUM_THREAD_MARSHALL};
+    use crate::bindings::dynamic::DynamicPdfiumBindings;
+    use crate::bindings::PdfiumLibraryBindings;
+    use std::path::Path;
+    use std::sync::TryLockError;
+
+    // Loads the real pdfium dynamic library and wraps it in a *concrete*
+    // ThreadSafePdfiumBindings so the test can reach both the wrapper's
+    // internals and the module-private PDFIUM_THREAD_MARSHALL static.
+    //
+    // Looks for `libpdfium` next to the crate manifest first (the cargo test
+    // working directory), then falls back to the system library search path,
+    // mirroring the crate's other dynamic-binding tests.
+    fn load_thread_safe_bindings() -> ThreadSafePdfiumBindings<DynamicPdfiumBindings> {
+        let filename = libloading::library_filename("pdfium");
+        let local = Path::new(".").join(&filename);
+
+        let library = unsafe { libloading::Library::new(local.as_os_str()) }
+            .or_else(|_| unsafe { libloading::Library::new(filename.as_os_str()) })
+            .expect(
+                "could not load the pdfium dynamic library \
+                 (looked in ./ and on the system library search path)",
+            );
+
+        let bindings = DynamicPdfiumBindings::new(library)
+            .expect("failed to bind to the pdfium dynamic library");
+
+        ThreadSafePdfiumBindings::new(bindings)
+    }
+
+    // Regression test for the held-lock thread-safety bug.
+    //
+    // The invariant the per-call locking model establishes is that the global
+    // marshall mutex is *free* once any bindings call has returned. The old
+    // model acquired the mutex inside FPDF_InitLibrary and parked the guard in
+    // a `RefCell<Option<MutexGuard>>` field on the wrapper, so the mutex stayed
+    // locked for the lifetime of the wrapper and every later call bypassed
+    // synchronisation. This test drives FPDF_InitLibrary and then checks that
+    // the marshall mutex can still be taken — deterministically, with no
+    // reliance on a data race or SIGSEGV.
+    //
+    // Run single-threaded (`--test-threads=1`) so it is the only test touching
+    // the marshall while it runs.
+    #[test]
+    fn marshall_mutex_is_released_after_call_returns() {
+        let bindings = load_thread_safe_bindings();
+
+        // In the buggy held-lock model this call acquires the marshall mutex
+        // and parks the guard on the wrapper; in the fixed per-call model the
+        // guard is dropped before the call returns.
+        bindings.FPDF_InitLibrary();
+
+        // After the call has fully returned the marshall mutex must be free.
+        // try_lock() distinguishes the two models deterministically:
+        //   * held-lock bug -> Err(WouldBlock): the guard is still parked in
+        //     the wrapper's RefCell, so the mutex is locked -> assertion fails
+        //     (RED).
+        //   * per-call fix  -> Ok: the guard was dropped when the call returned
+        //     -> assertion passes (GREEN).
+        // A Poisoned result means the mutex is *not* currently held (some
+        // unrelated test panicked while holding it); that is not the bug under
+        // test, so we treat it as released rather than failing spuriously.
+        match PDFIUM_THREAD_MARSHALL.try_lock() {
+            Ok(_guard) => { /* mutex free: per-call locking released it */ }
+            Err(TryLockError::Poisoned(_)) => { /* not held; unrelated poison */ }
+            Err(TryLockError::WouldBlock) => {
+                panic!(
+                    "marshall mutex still held after FPDF_InitLibrary returned — held-lock bug \
+                     (the guard was parked on the wrapper instead of being released per call)"
+                );
+            }
+        }
+
+        // Balance the FPDF_InitLibrary above so global pdfium state is left as
+        // we found it. In the fixed model this also re-acquires and releases
+        // the marshall mutex for the duration of the call.
+        bindings.FPDF_DestroyLibrary();
+    }
+}
