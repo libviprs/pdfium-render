@@ -134,6 +134,29 @@ use std::os::raw::{
 /// * [PdfiumLibraryBindings::FPDFBitmap_GetBuffer]: this function is not available when compiling
 ///   to WASM. Use the globally-available [PdfiumLibraryBindings::FPDFBitmap_GetBuffer_as_vec]
 ///   or the WASM-specific [PdfiumLibraryBindings::FPDFBitmap_GetBuffer_as_array] functions instead.
+/// Computes the length in bytes of a Pdfium bitmap buffer from its stride and height.
+///
+/// Pdfium reports both the stride and the height as `c_int` (a 32-bit signed integer). The
+/// naive `stride * height` product is also an `i32`, so a large raster (for example a 48"x36"
+/// blueprint rendered at 600 DPI: stride 115200, height 21600) overflows `i32::MAX` and wraps.
+/// A wrap to a negative value then sign-extends through `as usize` to roughly 1.8e19 and feeds a
+/// wildly oversized length to `slice::from_raw_parts`, producing an out-of-bounds read; a wrap to
+/// a small positive value silently truncates the raster.
+///
+/// This helper does the multiply in `usize` so it cannot wrap on any 64-bit target (the product of
+/// two non-negative `i32` values is at most about 4.6e18, well inside `usize`), uses a saturating
+/// multiply as a belt-and-braces guard for 32-bit targets, and treats a non-positive stride or
+/// height (Pdfium's error or empty-bitmap signal) as a zero-length buffer so callers never build a
+/// slice over an invalid span.
+#[cfg(not(target_arch = "wasm32"))]
+fn bitmap_buffer_len(stride: c_int, height: c_int) -> usize {
+    if stride <= 0 || height <= 0 {
+        return 0;
+    }
+
+    (stride as usize).saturating_mul(height as usize)
+}
+
 pub trait PdfiumLibraryBindings {
     /// Returns the canonical C-style boolean integer value 1, indicating `true`.
     #[inline]
@@ -3080,14 +3103,20 @@ pub trait PdfiumLibraryBindings {
     /// will be unchanged and a value of `false` will be returned.
     #[allow(non_snake_case)]
     fn FPDFBitmap_SetBuffer(&self, bitmap: FPDF_BITMAP, buffer: &[u8]) -> bool {
-        let buffer_length =
-            (self.FPDFBitmap_GetStride(bitmap) * self.FPDFBitmap_GetHeight(bitmap)) as usize;
+        let buffer_length = bitmap_buffer_len(
+            self.FPDFBitmap_GetStride(bitmap),
+            self.FPDFBitmap_GetHeight(bitmap),
+        );
 
-        if buffer.len() != buffer_length {
+        if buffer_length == 0 || buffer.len() != buffer_length {
             return false;
         }
 
         let buffer_start = self.FPDFBitmap_GetBuffer(bitmap);
+
+        if buffer_start.is_null() {
+            return false;
+        }
 
         let destination =
             unsafe { std::slice::from_raw_parts_mut(buffer_start as *mut u8, buffer_length) };
@@ -3122,11 +3151,20 @@ pub trait PdfiumLibraryBindings {
     /// Use [PdfiumLibraryBindings::FPDFBitmap_GetFormat] to find out the format of the data.
     #[allow(non_snake_case)]
     fn FPDFBitmap_GetBuffer_as_slice(&self, bitmap: FPDF_BITMAP) -> &[u8] {
+        let len = bitmap_buffer_len(
+            self.FPDFBitmap_GetStride(bitmap),
+            self.FPDFBitmap_GetHeight(bitmap),
+        );
+
         let buffer = self.FPDFBitmap_GetBuffer(bitmap);
 
-        let len = self.FPDFBitmap_GetStride(bitmap) * self.FPDFBitmap_GetHeight(bitmap);
+        if len == 0 || buffer.is_null() {
+            // `slice::from_raw_parts` requires a non-null, aligned pointer even for a
+            // zero-length slice, so hand back a genuinely empty slice instead.
+            return &[];
+        }
 
-        unsafe { std::slice::from_raw_parts(buffer as *const u8, len as usize) }
+        unsafe { std::slice::from_raw_parts(buffer as *const u8, len) }
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -9795,6 +9833,8 @@ pub trait PdfiumLibraryBindings {
 mod tests {
     use crate::prelude::*;
     use crate::utils::test::test_bind_to_pdfium;
+    #[cfg(not(target_arch = "wasm32"))]
+    use std::os::raw::c_int;
 
     #[test]
     fn test_is_true() -> Result<(), PdfiumError> {
@@ -9805,5 +9845,45 @@ mod tests {
         assert!(pdfium.bindings().is_true(-1));
 
         Ok(())
+    }
+
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn test_bitmap_buffer_len_does_not_overflow_i32() {
+        use crate::bindings::bitmap_buffer_len;
+
+        // A 48"x36" blueprint rendered at 600 DPI: width 28800, 4 bytes per pixel gives a
+        // stride of 115200, and a height of 21600. The true buffer length is 2_488_320_000
+        // bytes, which is larger than i32::MAX (2_147_483_647). The old `i32 * i32` product
+        // wrapped to a negative value and, once sign-extended through `as usize`, fed a length
+        // of roughly 1.8e19 to `slice::from_raw_parts`, causing an out-of-bounds read.
+        let stride = 115_200;
+        let height = 21_600;
+
+        // Sanity-check that this scenario really does overflow the old i32 arithmetic.
+        assert!((stride as i64) * (height as i64) > i32::MAX as i64);
+        assert!((stride as c_int).checked_mul(height as c_int).is_none());
+
+        assert_eq!(
+            bitmap_buffer_len(stride as c_int, height as c_int),
+            2_488_320_000usize
+        );
+    }
+
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn test_bitmap_buffer_len_guards_non_positive_stride_and_height() {
+        use crate::bindings::bitmap_buffer_len;
+
+        // A non-positive stride or height is Pdfium's error/empty-bitmap signal. It must yield a
+        // zero-length buffer so callers never build a slice over an invalid or oversized span.
+        assert_eq!(bitmap_buffer_len(0, 100), 0);
+        assert_eq!(bitmap_buffer_len(100, 0), 0);
+        assert_eq!(bitmap_buffer_len(-1, 100), 0);
+        assert_eq!(bitmap_buffer_len(100, -1), 0);
+        assert_eq!(bitmap_buffer_len(c_int::MIN, c_int::MIN), 0);
+
+        // A normal small bitmap still computes the exact expected length.
+        assert_eq!(bitmap_buffer_len(400, 300), 120_000);
     }
 }
