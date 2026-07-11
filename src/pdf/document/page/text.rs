@@ -71,6 +71,9 @@ impl<'a> PdfPageText<'a> {
     /// from the result of calling `PdfPageText::all().len()`.
     #[inline]
     pub fn len(&self) -> i32 {
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
         unsafe { self.bindings().FPDFText_CountChars(self.text_page_handle()) }
     }
 
@@ -130,6 +133,9 @@ impl<'a> PdfPageText<'a> {
         &self,
         object: &PdfPageTextObject,
     ) -> Result<PdfPageTextChars<'_>, PdfiumError> {
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
         Ok(PdfPageTextChars::new(
             self.page.document_handle(),
             self.page.page_handle(),
@@ -178,7 +184,7 @@ impl<'a> PdfPageText<'a> {
                 tolerance_x,
                 center_height,
                 tolerance_y,
-                self.bindings(),
+                &*self.bindings(),
             ),
             Self::get_char_index_near_point(
                 self.text_page_handle(),
@@ -186,7 +192,7 @@ impl<'a> PdfPageText<'a> {
                 tolerance_x,
                 center_height,
                 tolerance_y,
-                self.bindings(),
+                &*self.bindings(),
             ),
         ) {
             (Some(start), Some(end)) => Ok(PdfPageTextChars::new(
@@ -222,6 +228,9 @@ impl<'a> PdfPageText<'a> {
         tolerance_y: PdfPoints,
         bindings: &dyn PdfiumLibraryBindings,
     ) -> Option<PdfPageTextCharIndex> {
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
         match unsafe {
             bindings.FPDFText_GetCharIndexAtPos(
                 text_page_handle,
@@ -244,6 +253,11 @@ impl<'a> PdfPageText<'a> {
     /// and the order in which they appear visually during rendering (and thus the order in
     /// which they are read by a user) may not necessarily match.
     pub fn all(&self) -> String {
+        // Hold the lock across reading the page size and extracting the text so
+        // they form one atomic operation.
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
         self.inside_rect(self.page.page_size())
     }
 
@@ -255,6 +269,9 @@ impl<'a> PdfPageText<'a> {
     /// and the order in which they appear visually during rendering (and thus the order in
     /// which they are read by a user) may not necessarily match.
     pub fn inside_rect(&self, rect: PdfRect) -> String {
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
         // Retrieving the bounded text from Pdfium is a two-step operation. First, we call
         // FPDFText_GetBoundedText() with a null buffer; this will retrieve the length of
         // the bounded text in _characters_ (not _bytes_!). If the length is zero, then there is
@@ -313,6 +330,9 @@ impl<'a> PdfPageText<'a> {
     /// Returns all characters assigned to the given [PdfPageTextObject] in this [PdfPageText] object,
     /// concatenated into a single string.
     pub fn for_object(&self, object: &PdfPageTextObject) -> String {
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
         // Retrieving the string value from Pdfium is a two-step operation. First, we call
         // FPDFTextObj_GetText() with a null buffer; this will retrieve the length of
         // the text in bytes, assuming the page object exists. If the length is zero,
@@ -387,6 +407,9 @@ impl<'a> PdfPageText<'a> {
         options: &PdfSearchOptions,
         index: PdfPageTextCharIndex,
     ) -> Result<PdfPageTextSearch<'_>, PdfiumError> {
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
         if text.is_empty() {
             Err(PdfiumError::TextSearchTargetIsEmpty)
         } else {
@@ -416,6 +439,9 @@ impl<'a> Drop for PdfPageText<'a> {
     /// Closes the [PdfPageText] collection, releasing held memory.
     #[inline]
     fn drop(&mut self) {
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
         unsafe {
             self.bindings().FPDFText_ClosePage(self.text_page_handle());
         }

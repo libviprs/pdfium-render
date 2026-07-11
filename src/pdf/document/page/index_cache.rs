@@ -39,6 +39,19 @@ impl PdfPageIndexCache {
         self.pages_by_index.get(&(document, page))
     }
 
+    /// Returns the number of `pages_by_index` entries currently cached for the given raw document
+    /// handle. The [PAGE_INDEX_CACHE] is process-global and shared by every open document, so
+    /// counting entries scoped to a single document is the only way a test can assert on cache
+    /// contents without depending on what other, concurrently running tests happen to have cached.
+    #[cfg(test)]
+    #[inline]
+    fn count_for_document(&self, document: FPDF_DOCUMENT) -> usize {
+        self.pages_by_index
+            .keys()
+            .filter(|(cached_document, _)| *cached_document == document)
+            .count()
+    }
+
     /// Sets the currently cached properties for the given raw document and page handles.
     #[inline]
     fn set(&mut self, document: FPDF_DOCUMENT, page: FPDF_PAGE, props: PdfPageCachedProperties) {
@@ -301,7 +314,10 @@ mod tests {
 
         let mut document = pdfium.create_new_pdf()?;
 
-        assert!(PdfPageIndexCache::lock().pages_by_index.is_empty());
+        assert_eq!(
+            PdfPageIndexCache::lock().count_for_document(document.handle()),
+            0
+        );
 
         {
             // Now let's create a blank page and get a handle to it...
@@ -312,12 +328,18 @@ mod tests {
 
             // ... and confirm the cache updated.
 
-            assert_eq!(PdfPageIndexCache::lock().pages_by_index.len(), 1);
+            assert_eq!(
+                PdfPageIndexCache::lock().count_for_document(document.handle()),
+                1
+            );
         }
 
         // The page has dropped out of scope. Confirm the cache got cleaned up.
 
-        assert!(PdfPageIndexCache::lock().pages_by_index.is_empty());
+        assert_eq!(
+            PdfPageIndexCache::lock().count_for_document(document.handle()),
+            0
+        );
 
         // Get a new handle to the page...
 
@@ -325,7 +347,10 @@ mod tests {
 
         // ... and confirm the cache updated.
 
-        assert_eq!(PdfPageIndexCache::lock().pages_by_index.len(), 1);
+        assert_eq!(
+            PdfPageIndexCache::lock().count_for_document(document.handle()),
+            1
+        );
 
         Ok(())
     }
@@ -346,23 +371,35 @@ mod tests {
             }
 
             // Since we haven't retrieved any references to these pages, the index cache
-            // should be empty.
+            // should hold no entries for this document.
 
-            assert!(PdfPageIndexCache::lock().pages_by_index.is_empty());
+            assert_eq!(
+                PdfPageIndexCache::lock().count_for_document(document_0.handle()),
+                0
+            );
 
             // Check that the cache gets populated as we retrieve references to pages.
 
             let document_0_page_0 = document_0.pages().get(0)?;
 
-            assert_eq!(PdfPageIndexCache::lock().pages_by_index.len(), 1);
+            assert_eq!(
+                PdfPageIndexCache::lock().count_for_document(document_0.handle()),
+                1
+            );
 
             let document_0_page_1 = document_0.pages().get(1)?;
 
-            assert_eq!(PdfPageIndexCache::lock().pages_by_index.len(), 2);
+            assert_eq!(
+                PdfPageIndexCache::lock().count_for_document(document_0.handle()),
+                2
+            );
 
             let document_0_page_2 = document_0.pages().get(2)?;
 
-            assert_eq!(PdfPageIndexCache::lock().pages_by_index.len(), 3);
+            assert_eq!(
+                PdfPageIndexCache::lock().count_for_document(document_0.handle()),
+                3
+            );
 
             // Check the cached indices are correct.
 
@@ -426,28 +463,48 @@ mod tests {
                         .create_page_at_end(PdfPagePaperSize::a4())?;
                 }
 
-                // Since we haven't retrieved any references to these pages, the index cache
-                // should only contain the references to the pages from the first document.
+                // Since we haven't retrieved any references to these pages, the second document
+                // should not yet contribute any entries to the cache, while the first document's
+                // three entries remain untouched.
 
-                assert_eq!(PdfPageIndexCache::lock().pages_by_index.len(), 3);
+                assert_eq!(
+                    PdfPageIndexCache::lock().count_for_document(document_0.handle()),
+                    3
+                );
+                assert_eq!(
+                    PdfPageIndexCache::lock().count_for_document(document_1.handle()),
+                    0
+                );
 
                 // Check that the cache gets populated as we retrieve references to pages.
 
                 let document_1_page_0 = document_1.pages().get(0)?;
 
-                assert_eq!(PdfPageIndexCache::lock().pages_by_index.len(), 4);
+                assert_eq!(
+                    PdfPageIndexCache::lock().count_for_document(document_1.handle()),
+                    1
+                );
 
                 let document_1_page_1 = document_1.pages().get(1)?;
 
-                assert_eq!(PdfPageIndexCache::lock().pages_by_index.len(), 5);
+                assert_eq!(
+                    PdfPageIndexCache::lock().count_for_document(document_1.handle()),
+                    2
+                );
 
                 let document_1_page_2 = document_1.pages().get(2)?;
 
-                assert_eq!(PdfPageIndexCache::lock().pages_by_index.len(), 6);
+                assert_eq!(
+                    PdfPageIndexCache::lock().count_for_document(document_1.handle()),
+                    3
+                );
 
                 let document_1_page_3 = document_1.pages().get(3)?;
 
-                assert_eq!(PdfPageIndexCache::lock().pages_by_index.len(), 7);
+                assert_eq!(
+                    PdfPageIndexCache::lock().count_for_document(document_1.handle()),
+                    4
+                );
 
                 // Check the cached indices are correct.
 
@@ -512,13 +569,23 @@ mod tests {
             // At this point, the pages from document_1 have been dropped. Those pages should
             // have been removed from the cache.
 
-            assert_eq!(PdfPageIndexCache::lock().pages_by_index.len(), 3);
+            assert_eq!(
+                PdfPageIndexCache::lock().count_for_document(document_1.handle()),
+                0
+            );
+            assert_eq!(
+                PdfPageIndexCache::lock().count_for_document(document_0.handle()),
+                3
+            );
         }
 
         // At this point, the pages from document_0 have been dropped. Those pages should
-        // have been removed from the cache; the cache should now be empty.
+        // have been removed from the cache; the cache should now hold no entries for it.
 
-        assert!(PdfPageIndexCache::lock().pages_by_index.is_empty());
+        assert_eq!(
+            PdfPageIndexCache::lock().count_for_document(document_0.handle()),
+            0
+        );
 
         Ok(())
     }
@@ -587,7 +654,10 @@ mod tests {
                 );
             }
 
-            assert_eq!(PdfPageIndexCache::lock().pages_by_index.len(), 100);
+            assert_eq!(
+                PdfPageIndexCache::lock().count_for_document(document.handle()),
+                100
+            );
             assert!(PdfPageIndexCache::lock()
                 .documents_by_maximum_index
                 .get(&document.handle())
@@ -620,7 +690,10 @@ mod tests {
                 .pages_mut()
                 .create_page_at_start(PdfPagePaperSize::a4())?;
 
-            assert_eq!(PdfPageIndexCache::lock().pages_by_index.len(), 101);
+            assert_eq!(
+                PdfPageIndexCache::lock().count_for_document(document.handle()),
+                101
+            );
             assert!(PdfPageIndexCache::lock()
                 .documents_by_maximum_index
                 .get(&document.handle())
@@ -666,7 +739,10 @@ mod tests {
                 .pages_mut()
                 .create_page_at_index(PdfPagePaperSize::a4(), 50)?;
 
-            assert_eq!(PdfPageIndexCache::lock().pages_by_index.len(), 102);
+            assert_eq!(
+                PdfPageIndexCache::lock().count_for_document(document.handle()),
+                102
+            );
             assert!(PdfPageIndexCache::lock()
                 .documents_by_maximum_index
                 .get(&document.handle())
@@ -753,7 +829,10 @@ mod tests {
                 ));
             }
 
-            assert_eq!(PdfPageIndexCache::lock().pages_by_index.len(), 100);
+            assert_eq!(
+                PdfPageIndexCache::lock().count_for_document(document.handle()),
+                100
+            );
             assert!(PdfPageIndexCache::lock()
                 .documents_by_maximum_index
                 .get(&document.handle())
@@ -784,7 +863,10 @@ mod tests {
 
             pages.first_mut().unwrap().take().unwrap().delete()?;
 
-            assert_eq!(PdfPageIndexCache::lock().pages_by_index.len(), 99);
+            assert_eq!(
+                PdfPageIndexCache::lock().count_for_document(document.handle()),
+                99
+            );
             assert!(PdfPageIndexCache::lock()
                 .documents_by_maximum_index
                 .get(&document.handle())
@@ -823,7 +905,10 @@ mod tests {
 
             pages.get_mut(50).unwrap().take().unwrap().delete()?;
 
-            assert_eq!(PdfPageIndexCache::lock().pages_by_index.len(), 98);
+            assert_eq!(
+                PdfPageIndexCache::lock().count_for_document(document.handle()),
+                98
+            );
             assert!(PdfPageIndexCache::lock()
                 .documents_by_maximum_index
                 .get(&document.handle())
@@ -899,7 +984,10 @@ mod tests {
                 );
             }
 
-            assert_eq!(PdfPageIndexCache::lock().pages_by_index.len(), 100);
+            assert_eq!(
+                PdfPageIndexCache::lock().count_for_document(document.handle()),
+                100
+            );
             assert!(PdfPageIndexCache::lock()
                 .documents_by_maximum_index
                 .get(&document.handle())
@@ -962,7 +1050,10 @@ mod tests {
 
             // All pages are now deleted.
 
-            assert!(PdfPageIndexCache::lock().pages_by_index.is_empty());
+            assert_eq!(
+                PdfPageIndexCache::lock().count_for_document(document.handle()),
+                0
+            );
             assert!(PdfPageIndexCache::lock()
                 .documents_by_maximum_index
                 .get(&document.handle())
@@ -970,5 +1061,208 @@ mod tests {
         }
 
         Ok(())
+    }
+
+    #[test]
+    fn count_for_document_isolates_entries_by_document_handle() {
+        // This is the pure-logic pin for the fix. It exercises the shared PAGE_INDEX_CACHE
+        // directly with synthetic (non-pdfium) document and page handles, so it needs no native
+        // library and runs deterministically from a single thread.
+        //
+        // It reproduces the isolation flaw described in the issue: once two different documents
+        // have entries in the shared cache at the same time, a GLOBAL `pages_by_index.len()`
+        // assertion sees BOTH documents' entries, while a document-scoped `count_for_document`
+        // sees only the entries it owns. Before the fix, the suite asserted on the global length
+        // and therefore failed whenever a second document was present (which, under the default
+        // multi-threaded `cargo test`, a concurrent test routinely supplies). After the fix, the
+        // assertions are document-scoped and hold no matter what else is in the cache.
+        //
+        // I use large, distinctive synthetic handle values so they cannot collide with entries
+        // left by any other test, and I remove my own entries at the end so I leave the shared
+        // cache exactly as I found it.
+
+        use crate::bindgen::{FPDF_DOCUMENT, FPDF_PAGE};
+        use crate::pdf::document::page::PdfPageContentRegenerationStrategy;
+
+        let document_a = 0xA000_0000usize as FPDF_DOCUMENT;
+        let document_b = 0xB000_0000usize as FPDF_DOCUMENT;
+
+        let a_page_0 = 0xA000_0001usize as FPDF_PAGE;
+        let a_page_1 = 0xA000_0002usize as FPDF_PAGE;
+        let b_page_0 = 0xB000_0001usize as FPDF_PAGE;
+        let b_page_1 = 0xB000_0002usize as FPDF_PAGE;
+        let b_page_2 = 0xB000_0003usize as FPDF_PAGE;
+
+        // Snapshot the whole-cache length before I add anything. Other tests may or may not have
+        // entries present depending on scheduling, so I only ever reason about the DELTA.
+
+        let global_before = PdfPageIndexCache::lock().pages_by_index.len();
+
+        // Document A contributes two entries; document B contributes three. They coexist in the
+        // shared cache, exactly the situation that breaks a global-length assertion.
+
+        for (page, index) in [(a_page_0, 0), (a_page_1, 1)] {
+            PdfPageIndexCache::cache_props_for_page(
+                document_a,
+                page,
+                index,
+                PdfPageContentRegenerationStrategy::AutomaticOnEveryChange,
+            );
+        }
+
+        for (page, index) in [(b_page_0, 0), (b_page_1, 1), (b_page_2, 2)] {
+            PdfPageIndexCache::cache_props_for_page(
+                document_b,
+                page,
+                index,
+                PdfPageContentRegenerationStrategy::AutomaticOnEveryChange,
+            );
+        }
+
+        // The document-scoped counts are exact and isolated: each document sees only its own
+        // entries, regardless of the other document or of any foreign entries in the cache.
+
+        assert_eq!(
+            PdfPageIndexCache::lock().count_for_document(document_a),
+            2,
+            "count_for_document must see only document A's two entries"
+        );
+        assert_eq!(
+            PdfPageIndexCache::lock().count_for_document(document_b),
+            3,
+            "count_for_document must see only document B's three entries"
+        );
+
+        // Meanwhile the GLOBAL length has grown by all five entries at once. This is what the old
+        // per-document assertions were really measuring, which is why they could not survive a
+        // second document being present. A document-scoped assertion of `== 3` on document B would
+        // pass here; a global assertion of `== 3` would see `global_before + 5` and fail.
+
+        let global_after = PdfPageIndexCache::lock().pages_by_index.len();
+
+        assert_eq!(
+            global_after - global_before,
+            5,
+            "the shared cache holds entries for BOTH documents at once, so a global length \
+             assertion is not isolated to a single document"
+        );
+
+        // Clean up my synthetic entries so the shared cache is left untouched for other tests.
+
+        for (document, page) in [
+            (document_a, a_page_0),
+            (document_a, a_page_1),
+            (document_b, b_page_0),
+            (document_b, b_page_1),
+            (document_b, b_page_2),
+        ] {
+            PdfPageIndexCache::remove_index_for_page(document, page);
+        }
+
+        assert_eq!(PdfPageIndexCache::lock().count_for_document(document_a), 0);
+        assert_eq!(PdfPageIndexCache::lock().count_for_document(document_b), 0);
+    }
+
+    #[test]
+    fn document_scoped_counts_isolate_across_live_documents() -> Result<(), PdfiumError> {
+        // The end-to-end counterpart of the pure-logic pin above, driven through the real pdfium
+        // page APIs. I hold two live documents at once so the shared cache provably contains
+        // entries for both, then confirm that a document-scoped count reports each document's own
+        // entries exactly, while the global length reflects the sum of both. This is the assertion
+        // shape the whole suite now uses, and it is correct no matter what other tests do to the
+        // shared cache under the default multi-threaded `cargo test`.
+
+        let pdfium = test_bind_to_pdfium();
+
+        // Document A: two pages, both held live.
+
+        let mut document_a = pdfium.create_new_pdf()?;
+
+        for _ in 1..=2 {
+            document_a
+                .pages_mut()
+                .create_page_at_end(PdfPagePaperSize::a4())?;
+        }
+
+        let _a_page_0 = document_a.pages().get(0)?;
+        let _a_page_1 = document_a.pages().get(1)?;
+
+        // Document B: three pages, all held live.
+
+        let mut document_b = pdfium.create_new_pdf()?;
+
+        for _ in 1..=3 {
+            document_b
+                .pages_mut()
+                .create_page_at_end(PdfPagePaperSize::a4())?;
+        }
+
+        let _b_page_0 = document_b.pages().get(0)?;
+        let _b_page_1 = document_b.pages().get(1)?;
+        let _b_page_2 = document_b.pages().get(2)?;
+
+        // Document-scoped counts are exact and isolated even though both documents (and possibly
+        // others from concurrent tests) are present in the shared cache at the same time.
+
+        assert_eq!(
+            PdfPageIndexCache::lock().count_for_document(document_a.handle()),
+            2
+        );
+        assert_eq!(
+            PdfPageIndexCache::lock().count_for_document(document_b.handle()),
+            3
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn parallel_document_scoped_counts_do_not_abort() {
+        // This is the regression pin for the actual reported symptom: the default multi-threaded
+        // `cargo test` aborting the whole binary. Several threads each create a document, take a
+        // live page reference, then assert on the cache. With the document-scoped `count_for_document`
+        // assertion, every thread sees only its own single entry regardless of what the other
+        // threads are doing, so none of them panics, nothing poisons the shared mutex, and no page
+        // drop re-panics inside a destructor. The old global `pages_by_index.len() == 1` assertion
+        // would instead observe the other threads' entries, panic while holding the lock guard,
+        // poison the mutex, and escalate to a process abort. I join every thread and require them
+        // all to have succeeded.
+
+        use std::thread;
+
+        let handles: Vec<_> = (0..8)
+            .map(|_| {
+                thread::spawn(|| -> Result<(), PdfiumError> {
+                    let pdfium = test_bind_to_pdfium();
+
+                    let mut document = pdfium.create_new_pdf()?;
+
+                    let _page = document
+                        .pages_mut()
+                        .create_page_at_start(PdfPagePaperSize::a4())?;
+
+                    // Take a live reference so this thread contributes an entry to the shared cache.
+
+                    let _page_ref = document.pages().get(0)?;
+
+                    // Document-scoped assertion: this thread only ever sees its own entry, so it
+                    // is stable under concurrency.
+
+                    assert_eq!(
+                        PdfPageIndexCache::lock().count_for_document(document.handle()),
+                        1
+                    );
+
+                    Ok(())
+                })
+            })
+            .collect();
+
+        for handle in handles {
+            handle
+                .join()
+                .expect("worker thread panicked, indicating the cache assertions are not isolated")
+                .expect("worker thread returned a pdfium error");
+        }
     }
 }
