@@ -28,23 +28,17 @@ pub type PdfPageIndex = c_int;
 /// Converts a page count reported by Pdfium's `FPDF_GetPageCount()`, a `c_int`, into a
 /// [PdfPageIndex].
 ///
-/// [PdfPageIndex] is a `u16`, so a page count that does not fit in a `u16` would silently
-/// truncate under a plain `as PdfPageIndex` cast. A count of exactly 65536, for example, wraps
-/// to 0, which would make `is_empty()` report an empty document and collapse `as_range()` to an
-/// empty range, hiding tens of thousands of real pages. A negative count is Pdfium's error
-/// signal and, left unchecked, would sign-extend into a large positive index.
+/// [PdfPageIndex] is now `c_int` itself, so the historical u16 truncation hazard (a count of
+/// exactly 65536 wrapping to 0 and making `is_empty()` report an empty document) is gone by
+/// construction. What remains is Pdfium's error signal: `FPDF_GetPageCount()` returns a
+/// negative value on failure, and a negative count left unchecked would corrupt `is_empty()`
+/// and collapse `as_range()` into a nonsensical range.
 ///
-/// This helper treats a non-positive count as zero pages and clamps any count above
-/// `PdfPageIndex::MAX` down to `PdfPageIndex::MAX`, so a caller can never observe a wrapped or
-/// truncated page count. The comparison runs in `c_int`: `PdfPageIndex::MAX` (65535) fits in a
-/// `c_int` on every target Pdfium supports, so widening it here cannot itself overflow.
+/// This helper treats any non-positive count as zero pages, so a caller can never observe a
+/// negative page count.
 fn page_count_to_index(count: c_int) -> PdfPageIndex {
     if count <= 0 {
         return 0;
-    }
-
-    if count > PdfPageIndex::MAX as c_int {
-        return PdfPageIndex::MAX;
     }
 
     count as PdfPageIndex
@@ -674,20 +668,13 @@ mod tests {
     use std::os::raw::c_int;
 
     #[test]
-    fn test_page_count_to_index_clamps_above_u16_max() {
-        // Pdfium reports the page count as a c_int (a 32-bit signed integer), but PdfPageIndex is
-        // a u16. A plain `as PdfPageIndex` cast of a count larger than u16::MAX truncates. The
-        // worst case is a count of exactly 65536, which wraps to 0: is_empty() would then report
-        // an empty document and as_range() would collapse to an empty range, hiding every page.
-        let overflowing = PdfPageIndex::MAX as c_int + 1; // 65536
-
-        // Confirm the naive cast really does wrap to zero for this count.
-        assert_eq!(overflowing as PdfPageIndex, 0);
-
-        // The guarded conversion clamps to PdfPageIndex::MAX instead of wrapping.
-        assert_eq!(page_count_to_index(overflowing), PdfPageIndex::MAX);
-        assert_eq!(page_count_to_index(c_int::MAX), PdfPageIndex::MAX);
-        assert_eq!(page_count_to_index(200_000), PdfPageIndex::MAX);
+    fn test_page_count_to_index_passes_large_counts_through() {
+        // PdfPageIndex is c_int, the same width Pdfium reports, so large positive counts pass
+        // through without truncation. These counts wrapped or clamped when PdfPageIndex was u16;
+        // this test pins the widened behavior.
+        assert_eq!(page_count_to_index(65_536), 65_536);
+        assert_eq!(page_count_to_index(200_000), 200_000);
+        assert_eq!(page_count_to_index(c_int::MAX), c_int::MAX);
     }
 
     #[test]
@@ -701,14 +688,11 @@ mod tests {
 
     #[test]
     fn test_page_count_to_index_preserves_in_range_counts() {
-        // A count that fits in a u16 passes through exactly.
+        // An ordinary positive count passes through exactly.
         assert_eq!(page_count_to_index(1), 1);
         assert_eq!(page_count_to_index(5), 5);
         assert_eq!(page_count_to_index(1_000), 1_000);
-        assert_eq!(
-            page_count_to_index(PdfPageIndex::MAX as c_int),
-            PdfPageIndex::MAX
-        );
+        assert_eq!(page_count_to_index(PdfPageIndex::MAX), PdfPageIndex::MAX);
     }
 
     #[test]
