@@ -27,3 +27,4 @@ form-test-page-*.jpg
 
 *.code-workspace
 .history/
+libpdfium.dylib
