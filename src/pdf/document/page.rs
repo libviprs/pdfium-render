@@ -11,6 +11,7 @@ pub mod object;
 pub mod objects;
 pub mod render_config;
 pub mod size;
+pub mod structure_tree;
 pub mod text;
 
 #[cfg(feature = "paragraph")]
@@ -37,13 +38,16 @@ use crate::pdf::document::page::objects::common::PdfPageObjectsCommon;
 use crate::pdf::document::page::objects::PdfPageObjects;
 use crate::pdf::document::page::render_config::{PdfPageRenderSettings, PdfRenderConfig};
 use crate::pdf::document::page::size::PdfPagePaperSize;
+use crate::pdf::document::page::structure_tree::PdfPageStructureTree;
 use crate::pdf::document::page::text::PdfPageText;
 use crate::pdf::font::PdfFont;
 use crate::pdf::matrix::{PdfMatrix, PdfMatrixValue};
 use crate::pdf::points::PdfPoints;
 use crate::pdf::rect::PdfRect;
+use crate::pdfium::PdfiumLibraryBindingsAccessor;
 use std::collections::{hash_map::Entry, HashMap};
 use std::f32::consts::{FRAC_PI_2, PI};
+use std::marker::PhantomData;
 use std::os::raw::{c_double, c_int};
 
 #[cfg(doc)]
@@ -130,15 +134,6 @@ impl PdfPageRenderRotation {
     }
 }
 
-// TODO: AJRC - 19/6/23 - remove deprecated PdfBitmapRotation type in 0.9.0
-// as part of tracking issue https://github.com/ajrcarey/pdfium-render/issues/36
-#[deprecated(
-    since = "0.8.6",
-    note = "This enum has been renamed to better reflect its purpose. Use the PdfPageRenderRotation enum instead."
-)]
-#[doc(hidden)]
-pub type PdfBitmapRotation = PdfPageRenderRotation;
-
 /// Content regeneration strategies that instruct `pdfium-render` when, if ever, it should
 /// automatically regenerate the content of a [PdfPage].
 ///
@@ -192,7 +187,8 @@ pub struct PdfPage<'a> {
     boundaries: PdfPageBoundaries<'a>,
     links: PdfPageLinks<'a>,
     objects: PdfPageObjects<'a>,
-    bindings: &'a dyn PdfiumLibraryBindings,
+    structure_tree: PdfPageStructureTree<'a>,
+    lifetime: PhantomData<&'a FPDF_PAGE>,
 }
 
 impl<'a> PdfPage<'a> {
@@ -207,7 +203,6 @@ impl<'a> PdfPage<'a> {
         page_handle: FPDF_PAGE,
         form_handle: Option<FPDF_FORMHANDLE>,
         label: Option<String>,
-        bindings: &'a dyn PdfiumLibraryBindings,
     ) -> Self {
         let mut result = PdfPage {
             document_handle,
@@ -216,16 +211,12 @@ impl<'a> PdfPage<'a> {
             label,
             regeneration_strategy: PdfPageContentRegenerationStrategy::Manual,
             is_content_regeneration_required: false,
-            annotations: PdfPageAnnotations::from_pdfium(
-                document_handle,
-                page_handle,
-                form_handle,
-                bindings,
-            ),
-            boundaries: PdfPageBoundaries::from_pdfium(page_handle, bindings),
-            links: PdfPageLinks::from_pdfium(page_handle, document_handle, bindings),
-            objects: PdfPageObjects::from_pdfium(document_handle, page_handle, bindings),
-            bindings,
+            annotations: PdfPageAnnotations::from_pdfium(document_handle, page_handle, form_handle),
+            boundaries: PdfPageBoundaries::from_pdfium(page_handle),
+            links: PdfPageLinks::from_pdfium(page_handle, document_handle),
+            objects: PdfPageObjects::from_pdfium(document_handle, page_handle),
+            structure_tree: PdfPageStructureTree::from_pdfium(page_handle),
+            lifetime: PhantomData,
         };
 
         // Make sure the default content regeneration strategy is applied to child containers.
@@ -247,12 +238,6 @@ impl<'a> PdfPage<'a> {
         self.document_handle
     }
 
-    /// Returns the [PdfiumLibraryBindings] used by this [PdfPage].
-    #[inline]
-    pub fn bindings(&self) -> &'a dyn PdfiumLibraryBindings {
-        self.bindings
-    }
-
     /// Returns the label assigned to this [PdfPage], if any.
     #[inline]
     pub fn label(&self) -> Option<&str> {
@@ -263,14 +248,20 @@ impl<'a> PdfPage<'a> {
     /// One point is 1/72 inches, roughly 0.358 mm.
     #[inline]
     pub fn width(&self) -> PdfPoints {
-        PdfPoints::new(self.bindings.FPDF_GetPageWidthF(self.page_handle))
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        PdfPoints::new(unsafe { self.bindings().FPDF_GetPageWidthF(self.page_handle) })
     }
 
     /// Returns the height of this [PdfPage] in device-independent points.
     /// One point is 1/72 inches, roughly 0.358 mm.
     #[inline]
     pub fn height(&self) -> PdfPoints {
-        PdfPoints::new(self.bindings.FPDF_GetPageHeightF(self.page_handle))
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        PdfPoints::new(unsafe { self.bindings().FPDF_GetPageHeightF(self.page_handle) })
     }
 
     /// Returns the width and height of this [PdfPage] expressed as a [PdfRect].
@@ -307,21 +298,36 @@ impl<'a> PdfPage<'a> {
     /// should be applied to this [PdfPage] during rendering.
     #[inline]
     pub fn rotation(&self) -> Result<PdfPageRenderRotation, PdfiumError> {
-        PdfPageRenderRotation::from_pdfium(self.bindings.FPDFPage_GetRotation(self.page_handle))
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        PdfPageRenderRotation::from_pdfium(unsafe {
+            self.bindings().FPDFPage_GetRotation(self.page_handle)
+        })
     }
 
     /// Sets the intrinsic rotation that should be applied to this [PdfPage] during rendering.
     #[inline]
     pub fn set_rotation(&mut self, rotation: PdfPageRenderRotation) {
-        self.bindings
-            .FPDFPage_SetRotation(self.page_handle, rotation.as_pdfium());
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        unsafe {
+            self.bindings()
+                .FPDFPage_SetRotation(self.page_handle, rotation.as_pdfium());
+        }
     }
 
     /// Returns `true` if any object on the page contains transparency.
     #[inline]
     pub fn has_transparency(&self) -> bool {
-        self.bindings
-            .is_true(self.bindings.FPDFPage_HasTransparency(self.page_handle))
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        unsafe {
+            self.bindings()
+                .is_true(self.bindings().FPDFPage_HasTransparency(self.page_handle))
+        }
     }
 
     /// Returns the paper size of this [PdfPage].
@@ -346,12 +352,16 @@ impl<'a> PdfPage<'a> {
     /// ```
     #[inline]
     pub fn has_embedded_thumbnail(&self) -> bool {
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
         // To determine whether the page includes a thumbnail, we ask Pdfium to return the
         // size of the thumbnail data. A non-zero value indicates a thumbnail exists.
 
-        self.bindings
-            .FPDFPage_GetRawThumbnailData(self.page_handle, std::ptr::null_mut(), 0)
-            > 0
+        (unsafe {
+            self.bindings()
+                .FPDFPage_GetRawThumbnailData(self.page_handle, std::ptr::null_mut(), 0)
+        }) > 0
     }
 
     /// Returns the embedded thumbnail for this [PdfPage], if any.
@@ -369,34 +379,41 @@ impl<'a> PdfPage<'a> {
     ///     )?; // Renders a 128 x 128 thumbnail of the page
     /// ```
     pub fn embedded_thumbnail(&self) -> Result<PdfBitmap<'_>, PdfiumError> {
-        let thumbnail_handle = self
-            .bindings()
-            .FPDFPage_GetThumbnailAsBitmap(self.page_handle);
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        let thumbnail_handle = unsafe {
+            self.bindings()
+                .FPDFPage_GetThumbnailAsBitmap(self.page_handle)
+        };
 
         if thumbnail_handle.is_null() {
             // No thumbnail is available for this page.
 
             Err(PdfiumError::PageMissingEmbeddedThumbnail)
         } else {
-            Ok(PdfBitmap::from_pdfium(thumbnail_handle, self.bindings))
+            Ok(PdfBitmap::from_pdfium(thumbnail_handle))
         }
     }
 
     /// Returns the collection of text boxes contained within this [PdfPage].
     pub fn text(&self) -> Result<PdfPageText<'_>, PdfiumError> {
-        let text_handle = self.bindings().FPDFText_LoadPage(self.page_handle);
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        let text_handle = unsafe { self.bindings().FPDFText_LoadPage(self.page_handle) };
 
         if text_handle.is_null() {
             Err(PdfiumError::PdfiumLibraryInternalError(
                 PdfiumInternalError::Unknown,
             ))
         } else {
-            Ok(PdfPageText::from_pdfium(text_handle, self, self.bindings))
+            Ok(PdfPageText::from_pdfium(text_handle, self))
         }
     }
 
     /// Returns an immutable collection of the annotations that have been added to this [PdfPage].
-    pub fn annotations(&self) -> &PdfPageAnnotations<'a> {
+    pub fn annotations(&self) -> &PdfPageAnnotations<'_> {
         &self.annotations
     }
 
@@ -407,7 +424,7 @@ impl<'a> PdfPage<'a> {
 
     /// Returns an immutable collection of the bounding boxes defining the extents of this [PdfPage].
     #[inline]
-    pub fn boundaries(&self) -> &PdfPageBoundaries<'a> {
+    pub fn boundaries(&self) -> &PdfPageBoundaries<'_> {
         &self.boundaries
     }
 
@@ -419,7 +436,7 @@ impl<'a> PdfPage<'a> {
 
     /// Returns an immutable collection of the links on this [PdfPage].
     #[inline]
-    pub fn links(&self) -> &PdfPageLinks<'a> {
+    pub fn links(&self) -> &PdfPageLinks<'_> {
         &self.links
     }
 
@@ -430,13 +447,18 @@ impl<'a> PdfPage<'a> {
     }
 
     /// Returns an immutable collection of all the page objects on this [PdfPage].
-    pub fn objects(&self) -> &PdfPageObjects<'a> {
+    pub fn objects(&self) -> &PdfPageObjects<'_> {
         &self.objects
     }
 
     /// Returns a mutable collection of all the page objects on this [PdfPage].
     pub fn objects_mut(&mut self) -> &mut PdfPageObjects<'a> {
         &mut self.objects
+    }
+
+    /// Returns an immutable reference to the structure tree of this [PdfPage].
+    pub fn structure_tree(&self) -> &PdfPageStructureTree<'_> {
+        &self.structure_tree
     }
 
     /// Returns a list of all the distinct [PdfFont] instances used by the page text objects
@@ -459,7 +481,7 @@ impl<'a> PdfPage<'a> {
 
         result
             .into_iter()
-            .map(|handle| PdfFont::from_pdfium(handle, self.bindings, None, false))
+            .map(|handle| PdfFont::from_pdfium(handle, None, false))
             .collect()
     }
 
@@ -472,23 +494,28 @@ impl<'a> PdfPage<'a> {
         y: Pixels,
         config: &PdfRenderConfig,
     ) -> Result<(PdfPoints, PdfPoints), PdfiumError> {
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
         let mut page_x: c_double = 0.0;
         let mut page_y: c_double = 0.0;
 
         let settings = config.apply_to_page(self);
 
-        if self.bindings.is_true(self.bindings.FPDF_DeviceToPage(
-            self.page_handle,
-            settings.clipping.left as c_int,
-            settings.clipping.top as c_int,
-            (settings.clipping.right - settings.clipping.left) as c_int,
-            (settings.clipping.bottom - settings.clipping.top) as c_int,
-            settings.rotate,
-            x as c_int,
-            y as c_int,
-            &mut page_x,
-            &mut page_y,
-        )) {
+        if self.bindings().is_true(unsafe {
+            self.bindings().FPDF_DeviceToPage(
+                self.page_handle,
+                settings.clipping.left as c_int,
+                settings.clipping.top as c_int,
+                (settings.clipping.right - settings.clipping.left) as c_int,
+                (settings.clipping.bottom - settings.clipping.top) as c_int,
+                settings.rotate,
+                x as c_int,
+                y as c_int,
+                &mut page_x,
+                &mut page_y,
+            )
+        }) {
             Ok((PdfPoints::new(page_x as f32), PdfPoints::new(page_y as f32)))
         } else {
             Err(PdfiumError::CoordinateConversionFunctionIndicatedError)
@@ -504,23 +531,28 @@ impl<'a> PdfPage<'a> {
         y: PdfPoints,
         config: &PdfRenderConfig,
     ) -> Result<(Pixels, Pixels), PdfiumError> {
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
         let mut device_x: c_int = 0;
         let mut device_y: c_int = 0;
 
         let settings = config.apply_to_page(self);
 
-        if self.bindings.is_true(self.bindings.FPDF_PageToDevice(
-            self.page_handle,
-            settings.clipping.left as c_int,
-            settings.clipping.top as c_int,
-            (settings.clipping.right - settings.clipping.left) as c_int,
-            (settings.clipping.bottom - settings.clipping.top) as c_int,
-            settings.rotate,
-            x.value.into(),
-            y.value.into(),
-            &mut device_x,
-            &mut device_y,
-        )) {
+        if self.bindings().is_true(unsafe {
+            self.bindings().FPDF_PageToDevice(
+                self.page_handle,
+                settings.clipping.left as c_int,
+                settings.clipping.top as c_int,
+                (settings.clipping.right - settings.clipping.left) as c_int,
+                (settings.clipping.bottom - settings.clipping.top) as c_int,
+                settings.rotate,
+                x.value.into(),
+                y.value.into(),
+                &mut device_x,
+                &mut device_y,
+            )
+        }) {
             Ok((device_x as Pixels, device_y as Pixels))
         } else {
             Err(PdfiumError::CoordinateConversionFunctionIndicatedError)
@@ -544,8 +576,12 @@ impl<'a> PdfPage<'a> {
         height: Pixels,
         rotation: Option<PdfPageRenderRotation>,
     ) -> Result<PdfBitmap<'_>, PdfiumError> {
-        let mut bitmap =
-            PdfBitmap::empty(width, height, PdfBitmapFormat::default(), self.bindings)?;
+        // Hold the lock across the whole render so the bitmap allocation and the
+        // render run as one atomic operation rather than several separate holds.
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        let mut bitmap = PdfBitmap::empty(width, height, PdfBitmapFormat::default())?;
 
         let mut config = PdfRenderConfig::new()
             .set_target_width(width)
@@ -571,6 +607,13 @@ impl<'a> PdfPage<'a> {
         &self,
         config: &PdfRenderConfig,
     ) -> Result<PdfBitmap<'_>, PdfiumError> {
+        // Hold the lock across the whole render so reading the page dimensions
+        // (via apply_to_page), allocating the bitmap, and rendering run as one
+        // atomic operation. Without this, another thread could, for example,
+        // rotate the page between the size calculation and the render.
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
         let settings = config.apply_to_page(self);
 
         let mut bitmap = PdfBitmap::empty(
@@ -578,7 +621,6 @@ impl<'a> PdfPage<'a> {
             settings.height as Pixels,
             PdfBitmapFormat::from_pdfium(settings.format as u32)
                 .unwrap_or_else(|_| PdfBitmapFormat::default()),
-            self.bindings,
         )?;
 
         self.render_into_bitmap_with_settings(&mut bitmap, settings)?;
@@ -624,6 +666,11 @@ impl<'a> PdfPage<'a> {
         bitmap: &mut PdfBitmap,
         config: &PdfRenderConfig,
     ) -> Result<(), PdfiumError> {
+        // Hold the lock across reading the page dimensions (apply_to_page) and the
+        // render so they form one atomic operation.
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
         self.render_into_bitmap_with_settings(bitmap, config.apply_to_page(self))
     }
 
@@ -682,16 +729,22 @@ impl<'a> PdfPage<'a> {
         rotation: PdfPageRenderRotation,
         render_flags: c_int,
     ) -> Result<(), PdfiumError> {
-        self.bindings.FPDF_RenderPageBitmap(
-            bitmap.handle(),
-            self.page_handle,
-            start_x,
-            start_y,
-            size_x,
-            size_y,
-            rotation.as_pdfium(),
-            render_flags,
-        );
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        unsafe {
+            self.bindings().FPDF_RenderPageBitmap(
+                bitmap.handle(),
+                self.page_handle,
+                start_x,
+                start_y,
+                size_x,
+                size_y,
+                rotation.as_pdfium(),
+                render_flags,
+            );
+        }
+
         Ok(())
     }
 
@@ -703,118 +756,92 @@ impl<'a> PdfPage<'a> {
         bitmap: &mut PdfBitmap,
         settings: PdfPageRenderSettings,
     ) -> Result<(), PdfiumError> {
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
         let bitmap_handle = bitmap.handle();
 
         if settings.do_clear_bitmap_before_rendering {
             // Clear the bitmap buffer by setting every pixel to a known color.
 
-            self.bindings().FPDFBitmap_FillRect(
-                bitmap_handle,
-                0,
-                0,
-                settings.width,
-                settings.height,
-                settings.clear_color,
-            );
+            unsafe {
+                self.bindings().FPDFBitmap_FillRect(
+                    bitmap_handle,
+                    settings.start_x,
+                    settings.start_y,
+                    settings.width,
+                    settings.height,
+                    settings.clear_color,
+                );
+            }
         }
 
         if settings.do_render_form_data {
             // Render the PDF page into the bitmap buffer, ignoring any custom transformation matrix.
             // (Custom transforms cannot be applied to the rendering of form fields.)
 
-            self.bindings.FPDF_RenderPageBitmap(
-                bitmap_handle,
-                self.page_handle,
-                0,
-                0,
-                settings.width,
-                settings.height,
-                settings.rotate,
-                settings.render_flags,
-            );
-
-            if let Some(form_handle) = self.form_handle {
-                // Render user-supplied form data, if any, as an overlay on top of the page.
-
-                if let Some(form_field_highlight) = settings.form_field_highlight.as_ref() {
-                    for (form_field_type, (color, alpha)) in form_field_highlight.iter() {
-                        self.bindings.FPDF_SetFormFieldHighlightColor(
-                            form_handle,
-                            *form_field_type,
-                            *color,
-                        );
-
-                        self.bindings
-                            .FPDF_SetFormFieldHighlightAlpha(form_handle, *alpha);
-                    }
-                }
-
-                self.bindings.FPDF_FFLDraw(
-                    form_handle,
+            unsafe {
+                self.bindings().FPDF_RenderPageBitmap(
                     bitmap_handle,
                     self.page_handle,
-                    0,
-                    0,
+                    settings.start_x,
+                    settings.start_y,
                     settings.width,
                     settings.height,
                     settings.rotate,
                     settings.render_flags,
                 );
             }
+
+            if let Some(form_handle) = self.form_handle {
+                // Render user-supplied form data, if any, as an overlay on top of the page.
+
+                if let Some(form_field_highlight) = settings.form_field_highlight.as_ref() {
+                    for (form_field_type, (color, alpha)) in form_field_highlight.iter() {
+                        unsafe {
+                            self.bindings().FPDF_SetFormFieldHighlightColor(
+                                form_handle,
+                                *form_field_type,
+                                *color,
+                            );
+
+                            self.bindings()
+                                .FPDF_SetFormFieldHighlightAlpha(form_handle, *alpha);
+                        }
+                    }
+                }
+
+                unsafe {
+                    self.bindings().FPDF_FFLDraw(
+                        form_handle,
+                        bitmap_handle,
+                        self.page_handle,
+                        settings.start_x,
+                        settings.start_y,
+                        settings.width,
+                        settings.height,
+                        settings.rotate,
+                        settings.render_flags,
+                    );
+                }
+            }
         } else {
             // Render the PDF page into the bitmap buffer, applying any custom transformation matrix.
 
-            self.bindings.FPDF_RenderPageBitmapWithMatrix(
-                bitmap_handle,
-                self.page_handle,
-                &settings.matrix,
-                &settings.clipping,
-                settings.render_flags,
-            );
+            unsafe {
+                self.bindings().FPDF_RenderPageBitmapWithMatrix(
+                    bitmap_handle,
+                    self.page_handle,
+                    &settings.matrix,
+                    &settings.clipping,
+                    settings.render_flags,
+                );
+            }
         }
 
         bitmap.set_byte_order_from_render_settings(&settings);
 
         Ok(())
-    }
-
-    // TODO: AJRC - 29/7/22 - remove deprecated PdfPage::get_bitmap_*() functions in 0.9.0
-    // as part of tracking issue https://github.com/ajrcarey/pdfium-render/issues/36
-    /// Renders this [PdfPage] into a new [PdfBitmap] using pixel dimensions, rotation settings,
-    /// and rendering options configured in the given [PdfRenderConfig].
-    #[deprecated(
-        since = "0.7.12",
-        note = "This function has been renamed to better reflect its purpose. Use the PdfPage::render_with_config() function instead."
-    )]
-    #[doc(hidden)]
-    #[inline]
-    pub fn get_bitmap_with_config(
-        &self,
-        config: &PdfRenderConfig,
-    ) -> Result<PdfBitmap<'_>, PdfiumError> {
-        self.render_with_config(config)
-    }
-
-    /// Renders this [PdfPage] into a new [PdfBitmap] with the given pixel dimensions and
-    /// rotation setting.
-    ///
-    /// It is the responsibility of the caller to ensure the given pixel width and height
-    /// correctly maintain the page's aspect ratio.
-    ///
-    /// See also [PdfPage::render_with_config()], which calculates the correct pixel dimensions,
-    /// rotation settings, and rendering options to apply from a [PdfRenderConfig] object.
-    #[deprecated(
-        since = "0.7.12",
-        note = "This function has been renamed to better reflect its purpose. Use the PdfPage::render() function instead."
-    )]
-    #[doc(hidden)]
-    pub fn get_bitmap(
-        &self,
-        width: Pixels,
-        height: Pixels,
-        rotation: Option<PdfPageRenderRotation>,
-    ) -> Result<PdfBitmap<'_>, PdfiumError> {
-        self.render(width, height, rotation)
     }
 
     /// Applies the given transformation, expressed as six values representing the six configurable
@@ -858,22 +885,6 @@ impl<'a> PdfPage<'a> {
         self.apply_matrix_with_clip(PdfMatrix::new(a, b, c, d, e, f), clip)
     }
 
-    // TODO: AJRC - 3/11/23 - remove deprecated PdfPage::set_matrix_with_clip() function in 0.9.0
-    // as part of tracking issue https://github.com/ajrcarey/pdfium-render/issues/36
-    #[deprecated(
-        since = "0.8.15",
-        note = "This function has been renamed to better reflect its behaviour. Use the apply_matrix_with_clip() function instead."
-    )]
-    #[doc(hidden)]
-    #[inline]
-    pub fn set_matrix_with_clip(
-        &mut self,
-        matrix: PdfMatrix,
-        clip: PdfRect,
-    ) -> Result<(), PdfiumError> {
-        self.apply_matrix_with_clip(matrix, clip)
-    }
-
     /// Applies the given transformation, expressed as a [PdfMatrix], to this [PdfPage],
     /// restricting the effects of the transformation matrix to the given clipping rectangle.
     pub fn apply_matrix_with_clip(
@@ -881,14 +892,16 @@ impl<'a> PdfPage<'a> {
         matrix: PdfMatrix,
         clip: PdfRect,
     ) -> Result<(), PdfiumError> {
-        if self
-            .bindings()
-            .is_true(self.bindings().FPDFPage_TransFormWithClip(
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        if self.bindings().is_true(unsafe {
+            self.bindings().FPDFPage_TransFormWithClip(
                 self.page_handle,
                 &matrix.as_pdfium(),
                 &clip.as_pdfium(),
-            ))
-        {
+            )
+        }) {
             // A probable bug in Pdfium means we must reload the page in order for the
             // transformation to take effect. For more information, see:
             // https://github.com/ajrcarey/pdfium-render/issues/93
@@ -947,12 +960,16 @@ impl<'a> PdfPage<'a> {
     // Use Pdfium's built-in flatten. This has some problems; see:
     // https://github.com/ajrcarey/pdfium-render/issues/140
     pub fn flatten(&mut self) -> Result<(), PdfiumError> {
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
         // TODO: AJRC - 28/5/22 - consider allowing the caller to set the FLAT_NORMALDISPLAY or FLAT_PRINT flag.
         let flag = FLAT_PRINT;
 
-        match self
-            .bindings()
-            .FPDFPage_Flatten(self.page_handle, flag as c_int) as u32
+        match unsafe {
+            self.bindings()
+                .FPDFPage_Flatten(self.page_handle, flag as c_int)
+        } as u32
         {
             FLATTEN_SUCCESS => {
                 self.regenerate_content()?;
@@ -974,11 +991,16 @@ impl<'a> PdfPage<'a> {
 
     /// Deletes this [PdfPage] from its containing `PdfPages` collection, consuming this [PdfPage].
     pub fn delete(self) -> Result<(), PdfiumError> {
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
         let index = PdfPageIndexCache::get_index_for_page(self.document_handle, self.page_handle)
             .ok_or(PdfiumError::SourcePageIndexNotInCache)?;
 
-        self.bindings
-            .FPDFPage_Delete(self.document_handle, index as c_int);
+        unsafe {
+            self.bindings()
+                .FPDFPage_Delete(self.document_handle, index as c_int);
+        }
 
         PdfPageIndexCache::delete_pages_at_index(self.document_handle, index, 1);
 
@@ -1062,7 +1084,7 @@ impl<'a> PdfPage<'a> {
     /// Commits any staged but unsaved changes to this [PdfPage] to the underlying [PdfDocument].
     #[inline]
     pub(crate) fn regenerate_content_immut(&self) -> Result<(), PdfiumError> {
-        Self::regenerate_content_immut_for_handle(self.page_handle, self.bindings)
+        Self::regenerate_content_immut_for_handle(self.page_handle, &*self.bindings())
     }
 
     /// Commits any staged but unsaved changes to the page identified by the given internal
@@ -1074,7 +1096,10 @@ impl<'a> PdfPage<'a> {
         page: FPDF_PAGE,
         bindings: &dyn PdfiumLibraryBindings,
     ) -> Result<(), PdfiumError> {
-        if bindings.is_true(bindings.FPDFPage_GenerateContent(page)) {
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        if bindings.is_true(unsafe { bindings.FPDFPage_GenerateContent(page) }) {
             Ok(())
         } else {
             Err(PdfiumError::PdfiumLibraryInternalError(
@@ -1086,14 +1111,18 @@ impl<'a> PdfPage<'a> {
     /// Reloads the page transparently to any caller, forcing a refresh of all page data structures.
     /// This will replace this page's `FPDF_PAGE` handle. The page index cache will be updated.
     fn reload_in_place(&mut self) {
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
         if let Some(page_index) =
             PdfPageIndexCache::get_index_for_page(self.document_handle, self.page_handle)
         {
             self.drop_impl();
 
-            self.page_handle = self
-                .bindings
-                .FPDF_LoadPage(self.document_handle, page_index as c_int);
+            self.page_handle = unsafe {
+                self.bindings()
+                    .FPDF_LoadPage(self.document_handle, page_index as c_int)
+            };
 
             PdfPageIndexCache::cache_props_for_page(
                 self.document_handle,
@@ -1107,6 +1136,9 @@ impl<'a> PdfPage<'a> {
     /// Drops the page by calling `FPDF_ClosePage()`, freeing held memory. This will invalidate
     /// this page's `FPDF_PAGE` handle. The page index cache will be updated.
     fn drop_impl(&mut self) {
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
         if self.regeneration_strategy != PdfPageContentRegenerationStrategy::Manual
             && self.is_content_regeneration_required
         {
@@ -1117,7 +1149,9 @@ impl<'a> PdfPage<'a> {
             debug_assert!(result.is_ok());
         }
 
-        self.bindings.FPDF_ClosePage(self.page_handle);
+        unsafe {
+            self.bindings().FPDF_ClosePage(self.page_handle);
+        }
 
         PdfPageIndexCache::remove_index_for_page(self.document_handle, self.page_handle);
     }
@@ -1130,6 +1164,14 @@ impl<'a> Drop for PdfPage<'a> {
         self.drop_impl();
     }
 }
+
+impl<'a> PdfiumLibraryBindingsAccessor<'a> for PdfPage<'a> {}
+
+#[cfg(feature = "thread_safe")]
+unsafe impl<'a> Send for PdfPage<'a> {}
+
+#[cfg(feature = "thread_safe")]
+unsafe impl<'a> Sync for PdfPage<'a> {}
 
 #[cfg(test)]
 mod tests {
@@ -1151,14 +1193,13 @@ mod tests {
             .set_maximum_height(2000)
             .rotate_if_landscape(PdfPageRenderRotation::Degrees90, true);
 
-        let mut bitmap =
-            PdfBitmap::empty(2500, 2500, PdfBitmapFormat::default(), pdfium.bindings())?;
+        let mut bitmap = PdfBitmap::empty(2500, 2500, PdfBitmapFormat::default())?;
 
         for (index, page) in document.pages().iter().enumerate() {
             page.render_into_bitmap_with_config(&mut bitmap, &render_config)?; // Re-uses the same bitmap for rendering each page.
 
             bitmap
-                .as_image()
+                .as_image()?
                 .into_rgb8()
                 .save_with_format(format!("test-page-{}.jpg", index), ImageFormat::Jpeg)
                 .map_err(|_| PdfiumError::ImageError)?;
@@ -1181,7 +1222,7 @@ mod tests {
             .set_maximum_height(500);
 
         for (_index, page) in document.pages().iter().enumerate() {
-            let rendered_page = page.render_with_config(&render_config)?.as_image();
+            let rendered_page = page.render_with_config(&render_config)?.as_image()?;
 
             let (width, _height) = rendered_page.dimensions();
 

@@ -13,6 +13,7 @@ Each example can run via `cargo run --example <example_name>`.
 * `concat.rs`: generates a new document by concatenating pages from `test/export-test.pdf`, `test/form-test.pdf`, and `test/text-test.pdf` together, saving the new document to `test/concat-test.pdf`
 * `copy_objects.rs`: moves a selection of page objects from one page to another using the object copying functions in `PdfPageGroupObject`, saving the new document to `test/copy-test.pdf`.
 * `create.rs`: generates a new document by placing text objects onto a blank page, saving the new document to `test/create-test.pdf`.
+* `custom_font_provider.rs`: demonstrates using a simple `PdfiumCustomFontProvider` trait implementation to customize Pdfium's font loading and substitution behaviour.
 * `descenders.rs`: iterates over the individual characters in a text object, measuring which have glyph shapes that descend beneath the text object's font baseline.
 * `export.rs`: exports the individual pages in `test/export-test.pdf` to JPGs in the working directory. The example will attempt to bind to a copy of Pdfium in the working directory, falling back to the system-bundled library if local loading fails.
 * `export_clip_crop.rs`: exports just a portion of the page in `test/export-clip-crop-test.pdf` to a JPG file, clipping and cropping the rendering output based on object properties in the file.
@@ -48,13 +49,16 @@ Since `pdfium-render` does not include Pdfium itself, an external pre-packaged W
 
 You should see the sizes of each individual page in your sample file logged to the Javascript console, and the first page in the file will be rendered into an HTML canvas element.
 
-Comments in the `index.html` file explain how to instantiate both the compiled Pdfium and the example
-WASM modules and bind them together dynamically at run time. The basic recipe is simple:
+Comments in the `index.html` file explain how to instantiate both the compiled Pdfium and the example WASM modules and bind them together dynamically at run time. The basic recipe is simple:
 
 * Load and instantiate the Pdfium WASM module first.
 * Once Pdfium is instantiated, load and instantiate the WASM module for your compiled Rust application.
 * Once your WASM module is instantiated, call `pdfium-render`'s exported `initialize_pdfium_render()` function, passing it both instantiated WASM modules.
 * You can now call any Pdfium-related functions exported by your compiled Rust application.
+
+## Logging using `console_log`
+
+The `console_log` crate feature instructs `pdfium-render` to initialize logging using the `console_log` crate. This is necessary in order for debugging output to appear in the browser console. If you will be using `console_log` in your application, then disable this feature and initialize `console_log` in your application's initialization code before calling `pdfium-render`.
 
 ## Interface changes when compiling to WASM
 

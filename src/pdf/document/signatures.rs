@@ -2,9 +2,10 @@
 //! `PdfDocument`.
 
 use crate::bindgen::FPDF_DOCUMENT;
-use crate::bindings::PdfiumLibraryBindings;
 use crate::error::{PdfiumError, PdfiumInternalError};
 use crate::pdf::document::signature::PdfSignature;
+use crate::pdfium::PdfiumLibraryBindingsAccessor;
+use std::marker::PhantomData;
 use std::ops::{Range, RangeInclusive};
 use std::os::raw::c_int;
 
@@ -14,30 +15,25 @@ pub type PdfSignatureIndex = u16;
 /// The collection of [PdfSignature] objects inside a `PdfDocument`.
 pub struct PdfSignatures<'a> {
     document_handle: FPDF_DOCUMENT,
-    bindings: &'a dyn PdfiumLibraryBindings,
+    lifetime: PhantomData<&'a FPDF_DOCUMENT>,
 }
 
 impl<'a> PdfSignatures<'a> {
     #[inline]
-    pub(crate) fn from_pdfium(
-        document_handle: FPDF_DOCUMENT,
-        bindings: &'a dyn PdfiumLibraryBindings,
-    ) -> Self {
+    pub(crate) fn from_pdfium(document_handle: FPDF_DOCUMENT) -> Self {
         PdfSignatures {
             document_handle,
-            bindings,
+            lifetime: PhantomData,
         }
-    }
-
-    /// Returns the [PdfiumLibraryBindings] used by this [PdfSignatures] collection.
-    #[inline]
-    pub fn bindings(&self) -> &'a dyn PdfiumLibraryBindings {
-        self.bindings
     }
 
     /// Returns the number of signatures in this [PdfSignatures] collection.
     pub fn len(&self) -> PdfSignatureIndex {
-        self.bindings().FPDF_GetSignatureCount(self.document_handle) as PdfSignatureIndex
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        (unsafe { self.bindings().FPDF_GetSignatureCount(self.document_handle) })
+            as PdfSignatureIndex
     }
 
     /// Returns `true` if this [PdfSignatures] collection is empty.
@@ -65,20 +61,24 @@ impl<'a> PdfSignatures<'a> {
 
     /// Returns a single [PdfSignature] from this [PdfSignatures] collection.
     pub fn get(&self, index: PdfSignatureIndex) -> Result<PdfSignature<'a>, PdfiumError> {
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
         if index >= self.len() {
             return Err(PdfiumError::SignatureIndexOutOfBounds);
         }
 
-        let handle = self
-            .bindings()
-            .FPDF_GetSignatureObject(self.document_handle, index as c_int);
+        let handle = unsafe {
+            self.bindings()
+                .FPDF_GetSignatureObject(self.document_handle, index as c_int)
+        };
 
         if handle.is_null() {
             Err(PdfiumError::PdfiumLibraryInternalError(
                 PdfiumInternalError::Unknown,
             ))
         } else {
-            Ok(PdfSignature::from_pdfium(handle, self.bindings()))
+            Ok(PdfSignature::from_pdfium(handle))
         }
     }
 
@@ -88,6 +88,14 @@ impl<'a> PdfSignatures<'a> {
         PdfSignaturesIterator::new(self)
     }
 }
+
+impl<'a> PdfiumLibraryBindingsAccessor<'a> for PdfSignatures<'a> {}
+
+#[cfg(feature = "thread_safe")]
+unsafe impl<'a> Send for PdfSignatures<'a> {}
+
+#[cfg(feature = "thread_safe")]
+unsafe impl<'a> Sync for PdfSignatures<'a> {}
 
 /// An iterator over all the [PdfSignature] objects in a [PdfSignatures] collection.
 pub struct PdfSignaturesIterator<'a> {

@@ -2,13 +2,14 @@
 //! in a [PdfBookmarks] collection.
 
 use crate::bindgen::{FPDF_BOOKMARK, FPDF_DOCUMENT};
-use crate::bindings::PdfiumLibraryBindings;
 use crate::pdf::action::PdfAction;
 use crate::pdf::destination::PdfDestination;
 use crate::pdf::document::bookmarks::PdfBookmarksIterator;
+use crate::pdfium::PdfiumLibraryBindingsAccessor;
 use crate::utils::mem::create_byte_buffer;
 use crate::utils::utf16le::get_string_from_pdfium_utf16le_bytes;
 use std::hash::{Hash, Hasher};
+use std::marker::PhantomData;
 use std::os::raw::c_void;
 
 #[cfg(doc)]
@@ -23,7 +24,7 @@ pub struct PdfBookmark<'a> {
     bookmark_handle: FPDF_BOOKMARK,
     parent: Option<FPDF_BOOKMARK>,
     document_handle: FPDF_DOCUMENT,
-    bindings: &'a dyn PdfiumLibraryBindings,
+    lifetime: PhantomData<&'a FPDF_BOOKMARK>,
 }
 
 impl<'a> PartialEq for PdfBookmark<'a> {
@@ -44,7 +45,7 @@ impl<'a> PartialEq for PdfBookmark<'a> {
         // - The structure is allocated and retained by Pdfium for as long as the document is open,
         //   so the same bookmark will always give the same handle.
 
-        self.bookmark_handle == other.bookmark_handle
+        self.bookmark_handle() == other.bookmark_handle()
     }
 }
 
@@ -55,7 +56,7 @@ impl<'a> Hash for PdfBookmark<'a> {
     where
         H: Hasher,
     {
-        self.bookmark_handle.hash(state);
+        self.bookmark_handle().hash(state);
     }
 }
 
@@ -64,13 +65,12 @@ impl<'a> PdfBookmark<'a> {
         bookmark_handle: FPDF_BOOKMARK,
         parent: Option<FPDF_BOOKMARK>,
         document_handle: FPDF_DOCUMENT,
-        bindings: &'a dyn PdfiumLibraryBindings,
     ) -> Self {
         PdfBookmark {
             bookmark_handle,
             parent,
             document_handle,
-            bindings,
+            lifetime: PhantomData,
         }
     }
 
@@ -86,14 +86,11 @@ impl<'a> PdfBookmark<'a> {
         self.document_handle
     }
 
-    /// Returns the [PdfiumLibraryBindings] used by this [PdfBookmark].
-    #[inline]
-    pub fn bindings(&self) -> &'a dyn PdfiumLibraryBindings {
-        self.bindings
-    }
-
     /// Returns the title of this [PdfBookmark], if any.
     pub fn title(&self) -> Option<String> {
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
         // Retrieving the bookmark title from Pdfium is a two-step operation. First, we call
         // FPDFBookmark_GetTitle() with a null buffer; this will retrieve the length of
         // the bookmark title in bytes. If the length is zero, then there is no title.
@@ -102,9 +99,10 @@ impl<'a> PdfBookmark<'a> {
         // length and call FPDFBookmark_GetTitle() again with a pointer to the buffer;
         // this will write the bookmark title to the buffer in UTF16-LE format.
 
-        let buffer_length =
-            self.bindings
-                .FPDFBookmark_GetTitle(self.bookmark_handle, std::ptr::null_mut(), 0);
+        let buffer_length = unsafe {
+            self.bindings()
+                .FPDFBookmark_GetTitle(self.bookmark_handle(), std::ptr::null_mut(), 0)
+        };
 
         if buffer_length == 0 {
             // No title is defined.
@@ -114,11 +112,13 @@ impl<'a> PdfBookmark<'a> {
 
         let mut buffer = create_byte_buffer(buffer_length as usize);
 
-        let result = self.bindings.FPDFBookmark_GetTitle(
-            self.bookmark_handle,
-            buffer.as_mut_ptr() as *mut c_void,
-            buffer_length,
-        );
+        let result = unsafe {
+            self.bindings().FPDFBookmark_GetTitle(
+                self.bookmark_handle(),
+                buffer.as_mut_ptr() as *mut c_void,
+                buffer_length,
+            )
+        };
 
         assert_eq!(result, buffer_length);
 
@@ -132,15 +132,18 @@ impl<'a> PdfBookmark<'a> {
     /// of type [PdfActionType::GoToDestinationInSameDocument], but the PDF file format supports
     /// a variety of other actions.
     pub fn action(&self) -> Option<PdfAction<'a>> {
-        let handle = self.bindings.FPDFBookmark_GetAction(self.bookmark_handle);
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        let handle = unsafe { self.bindings().FPDFBookmark_GetAction(self.bookmark_handle) };
 
         if handle.is_null() {
             None
         } else {
             Some(PdfAction::from_pdfium(
                 handle,
-                self.document_handle,
-                self.bindings,
+                self.document_handle(),
+                self.bindings(),
             ))
         }
     }
@@ -150,18 +153,18 @@ impl<'a> PdfBookmark<'a> {
     /// The destination specifies the page and region, if any, that will be the target
     /// of the action behaviour specified by [PdfBookmark::action()].
     pub fn destination(&self) -> Option<PdfDestination<'a>> {
-        let handle = self
-            .bindings
-            .FPDFBookmark_GetDest(self.document_handle, self.bookmark_handle);
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        let handle = unsafe {
+            self.bindings()
+                .FPDFBookmark_GetDest(self.document_handle(), self.bookmark_handle())
+        };
 
         if handle.is_null() {
             None
         } else {
-            Some(PdfDestination::from_pdfium(
-                self.document_handle,
-                handle,
-                self.bindings,
-            ))
+            Some(PdfDestination::from_pdfium(self.document_handle(), handle))
         }
     }
 
@@ -169,44 +172,56 @@ impl<'a> PdfBookmark<'a> {
     #[inline]
     pub fn parent(&self) -> Option<PdfBookmark<'a>> {
         self.parent.map(|parent_handle| {
-            PdfBookmark::from_pdfium(parent_handle, None, self.document_handle, self.bindings)
+            PdfBookmark::from_pdfium(parent_handle, None, self.document_handle())
         })
     }
 
     /// Returns the number of direct children of this [PdfBookmark].
     #[inline]
     pub fn children_len(&self) -> usize {
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
         // If there are N child bookmarks, then FPDFBookmark_GetCount returns a
         // N if the bookmark tree should be displayed open by default, and -N if
         // the child tree should be displayed closed by deafult.
-        self.bindings
-            .FPDFBookmark_GetCount(self.bookmark_handle)
-            .unsigned_abs() as usize
+        (unsafe {
+            self.bindings()
+                .FPDFBookmark_GetCount(self.bookmark_handle())
+                .unsigned_abs()
+        }) as usize
     }
 
     /// Returns the first child [PdfBookmark] of this [PdfBookmark], if any.
     pub fn first_child(&self) -> Option<PdfBookmark<'a>> {
-        let handle = self
-            .bindings
-            .FPDFBookmark_GetFirstChild(self.document_handle, self.bookmark_handle);
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        let handle = unsafe {
+            self.bindings()
+                .FPDFBookmark_GetFirstChild(self.document_handle(), self.bookmark_handle())
+        };
 
         if handle.is_null() {
             None
         } else {
             Some(PdfBookmark::from_pdfium(
                 handle,
-                Some(self.bookmark_handle),
+                Some(self.bookmark_handle()),
                 self.document_handle,
-                self.bindings,
             ))
         }
     }
 
     /// Returns the next [PdfBookmark] at the same tree level as this [PdfBookmark], if any.
     pub fn next_sibling(&self) -> Option<PdfBookmark<'a>> {
-        let handle = self
-            .bindings
-            .FPDFBookmark_GetNextSibling(self.document_handle, self.bookmark_handle);
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        let handle = unsafe {
+            self.bindings()
+                .FPDFBookmark_GetNextSibling(self.document_handle(), self.bookmark_handle())
+        };
 
         if handle.is_null() {
             None
@@ -214,8 +229,7 @@ impl<'a> PdfBookmark<'a> {
             Some(PdfBookmark::from_pdfium(
                 handle,
                 self.parent,
-                self.document_handle,
-                self.bindings,
+                self.document_handle(),
             ))
         }
     }
@@ -230,19 +244,13 @@ impl<'a> PdfBookmark<'a> {
                 // child or not, by iterating over all the parent's children.
 
                 PdfBookmarksIterator::new(
-                    PdfBookmark::from_pdfium(
-                        parent_handle,
-                        None,
-                        self.document_handle,
-                        self.bindings,
-                    )
-                    .first_child(),
+                    PdfBookmark::from_pdfium(parent_handle, None, self.document_handle)
+                        .first_child(),
                     false,
                     // Signal that the iterator should skip over this bookmark when iterating
                     // the parent's direct children.
                     Some(self.clone()),
                     self.document_handle(),
-                    self.bindings(),
                 )
             }
             None => {
@@ -257,7 +265,6 @@ impl<'a> PdfBookmark<'a> {
                     // the parent's direct children.
                     Some(self.clone()),
                     self.document_handle(),
-                    self.bindings(),
                 )
             }
         }
@@ -269,13 +276,7 @@ impl<'a> PdfBookmark<'a> {
     /// To visit all child nodes, including children of children, use [PdfBookmark::iter_all_descendants()].
     #[inline]
     pub fn iter_direct_children(&self) -> PdfBookmarksIterator<'a> {
-        PdfBookmarksIterator::new(
-            self.first_child(),
-            false,
-            None,
-            self.document_handle(),
-            self.bindings(),
-        )
+        PdfBookmarksIterator::new(self.first_child(), false, None, self.document_handle())
     }
 
     /// Returns an iterator over all [PdfBookmark] descendant nodes of this [PdfBookmark],
@@ -283,15 +284,17 @@ impl<'a> PdfBookmark<'a> {
     /// use [PdfBookmark::iter_direct_children()].
     #[inline]
     pub fn iter_all_descendants(&self) -> PdfBookmarksIterator<'a> {
-        PdfBookmarksIterator::new(
-            self.first_child(),
-            true,
-            None,
-            self.document_handle(),
-            self.bindings(),
-        )
+        PdfBookmarksIterator::new(self.first_child(), true, None, self.document_handle())
     }
 }
+
+impl<'a> PdfiumLibraryBindingsAccessor<'a> for PdfBookmark<'a> {}
+
+#[cfg(feature = "thread_safe")]
+unsafe impl<'a> Send for PdfBookmark<'a> {}
+
+#[cfg(feature = "thread_safe")]
+unsafe impl<'a> Sync for PdfBookmark<'a> {}
 
 #[cfg(test)]
 mod tests {

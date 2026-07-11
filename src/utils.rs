@@ -260,7 +260,6 @@ pub(crate) mod files {
     use std::io::{Read, Seek, SeekFrom, Write};
     use std::ops::Deref;
     use std::os::raw::{c_int, c_uchar, c_ulong, c_void};
-    use std::ptr::null_mut;
     use std::slice;
 
     // These functions return wrapped versions of Pdfium's file access structs. They are used
@@ -303,7 +302,7 @@ pub(crate) mod files {
         let mut result = Box::new(FpdfFileAccessExt {
             content_length,
             get_block: Some(read_block_from_callback),
-            file_access_ptr: null_mut(), // We'll set this value in just a moment.
+            file_access_ptr: std::ptr::null_mut(), // We'll set this value in just a moment.
             reader: Box::new(reader),
         });
 
@@ -348,8 +347,6 @@ pub(crate) mod files {
         /// Returns an `FPDF_FILEACCESS` pointer suitable for passing to `FPDF_LoadCustomDocument()`.
         #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
         // This function is never used when compiling to WASM.
-        #[cfg_attr(feature = "thread_safe", allow(dead_code))]
-        // This function is never used when compiling with the thread_safe feature enabled.
         #[inline]
         pub(crate) fn as_fpdf_file_access_mut_ptr(&mut self) -> &mut FPDF_FILEACCESS {
             unsafe { &mut *(self as *mut FpdfFileAccessExt as *mut FPDF_FILEACCESS) }
@@ -458,6 +455,7 @@ pub(crate) mod test {
     // Provides a function that binds to the correct Pdfium configuration during unit tests,
     // depending on selected crate features.
 
+    use crate::error::PdfiumError;
     use crate::pdfium::Pdfium;
 
     #[inline]
@@ -469,11 +467,18 @@ pub(crate) mod test {
     #[inline]
     #[cfg(not(feature = "static"))]
     pub(crate) fn test_bind_to_pdfium() -> Pdfium {
-        Pdfium::new(
-            Pdfium::bind_to_library(Pdfium::pdfium_platform_library_name_at_path("./"))
-                .or_else(|_| Pdfium::bind_to_system_library())
-                .unwrap(),
-        )
+        match Pdfium::bind_to_library(Pdfium::pdfium_platform_library_name_at_path("./"))
+            .or_else(|_| Pdfium::bind_to_system_library())
+        {
+            Ok(bindings) => Pdfium::new(bindings), // Create new bindings
+            Err(PdfiumError::PdfiumLibraryBindingsAlreadyInitialized) => Pdfium {
+                custom_font_provider: None,
+
+                #[cfg(not(target_arch = "wasm32"))]
+                platform_default_font_provider: None,
+            }, // Re-use existing bindings
+            Err(e) => Err(e).unwrap(),             // Explicitly re-throw the error
+        }
     }
 }
 

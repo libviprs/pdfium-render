@@ -27,7 +27,7 @@
 
         for (index, page) in document.pages().iter().enumerate() {
             page.render_with_config(&render_config)?
-                .as_image() // Renders this page to an image::DynamicImage...
+                .as_image()? // Renders this page to an image::DynamicImage...
                 .into_rgb8() // ... removes the alpha channel for compatibility with the Jpeg format...
                 .save_with_format(
                     format!("page-{}.jpg", index), 
@@ -57,6 +57,7 @@ Short, commented examples that demonstrate all the major Pdfium document handlin
 * Page link introspection.
 * Creation of new documents and new pages.
 * Creation of page objects for text, paths, and bitmaps.
+* Custom font management.
 * Page object transformation.
 * Multi-page tiled rendering.
 * Watermarking.
@@ -65,15 +66,13 @@ Short, commented examples that demonstrate all the major Pdfium document handlin
 
 ## What's new
 
-_Note: upcoming release 0.9.0 will remove all deprecated items. For a complete list of deprecated items, see <https://github.com/ajrcarey/pdfium-render/issues/36>._
+Release 0.9.3 increments the `pdfium_latest` feature to `pdfium_7881` to match new Pdfium release 7881 at <https://github.com/bblanchon/pdfium-binaries>, fixes a bug where `pdfium-render` would fail to compile on targets `c_char` is unsigned thanks to an excellent contribution from <https://github.com/virtuallynathan>, adds the new `PdfDocument::catalog()` and `PdfDocument::catalog_mut()` functions together with the new `PdfCatalog` struct for interacting with a document's catalog, and adds a new `PdfPageTextObject::set_unscaled_font_size()` function that allows directly setting the font size of an existing text object.
 
-Release 0.8.37 increments the `pdfium_latest` feature to `pdfium_7543` to match new Pdfium release 7543 at <https://github.com/bblanchon/pdfium-binaries>, adds new `PdfRenderConfig::set_fixed_size()`, `PdfRenderConfig::set_fixed_width()`, and `PdfRenderConfig::set_fixed_height()` functions for more finely-grained rendering control thanks to an excellent suggestion by <https://github.com/newinnovations>, adds new `PdfRenderConfig::set_fixed_size_to_bitmap()` and `PdfRenderConfig::scale_page_to_bitmap()` functions for conveniently setting target render sizes directly from a bitmap, adds a new `PdfPageObject::get_clip_path()` function thanks to an excellent contribution from <https://github.com/abdelkarim>, adds a new `PdfPageImageObject::get_raw_image_data()` function thanks to an excellent contribution from <https://github.com/zamf>, and adds new `PdfPageObject::is_active()`, `PdfPageObject::set_active()`, `PdfPageObject::is_inactive()`, and `PdfPageObject::set_inactive()` functions for setting and retrieving the object status on its containing page. Page objects marked as inactive are retained in the document but are not included in page rendering.
+Release 0.9.2 changes the visibility of the `PdfiumLibraryBindingsAccessor` trait from `pub(crate)` to `pub`, easing use of the raw `FPDF_*` API by crate consumers thanks to an excellent observation by <https://github.com/martin-kolarik>, changes the signature of the `PdfBitmap::empty()` and `PdfBitmap::from_bytes()` functions to remove the `bindings` argument which is no longer required, reworks `PdfBitmap::from_bytes()` as a safe function and adds a new unsafe `PdfBitmap::from_bytes_unchecked()` function, both thanks to excellent contributions from <https://github.com/alecbarber>, and adds a new `PdfiumCustomFontProvider` trait that can be used to override Pdfium's default platform font provider by passing a trait implementation to the new `Pdfium::set_custom_font_provider()` function. The font provider is called each time Pdfium needs to perform font substitution, allowing fine-grained control over font matching, loading, and caching. A new `examples/custom_font_provider.rs` example demonstrates the new functionality.
 
-Release 0.8.36 corrects a compatibility problem introduced in the latest version of the `libloading` crate, fixes a bug in the `PdfPageText::chars_for_object()` function thanks to an excellent investigation by <https://github.com/bikallem>, and resolves a memory leak that could occur when working with `PdfPageObject` instances not attached to pages or annotations thanks to an excellent investigation by <https://github.com/def-roth>.
+Release 0.9.1 increments the `pdfium_latest` feature to `pdfium_7763` to match new Pdfium release 7763 at <https://github.com/bblanchon/pdfium-binaries>, relaxes lifetime restrictions on `PdfPageTextSegment` and `PdfPageTextChars` thanks to an excellent contribution from <https://github.com/owl-from-hogvarts>, adds a new `console_log` crate feature to control initialization of `console_log`-based logging to the console browser in WASM builds thanks to an excellent contribution from <https://github.com/tectin0>, and adds a new `PdfPageTextObject::is_visible()` utility function in response to an excellent suggestion by <https://github.com/cobnett3>.
 
-Release 0.8.35 increments the `pdfium_latest` feature to `pdfium_7350` to match new Pdfium release 7350 at <https://github.com/bblanchon/pdfium-binaries>, fixes a bug in the WASM implementation of bezier curves thanks to an excellent contribution from <https://github.com/marcosc90>, adds coordinate system ordering protection to the `PdfRect` struct initializers thanks to an excellent suggestion from <https://github.com/zecuria>, and fixes a bug in example `examples/image_extract.rs`.
-
-Release 0.8.34 substantially expands the support for annotation and form field flags thanks to an excellent contribution from <https://github.com/zecuria>, adds new `PdfPageTextChar::is_generated()` and `PdfPageTextChar::is_hyphen()` functions thanks to an excellent contribution from <https://github.com/bikallem>, and resolves a build error on macOS systems related to the optional `bindgen` dependency thanks to an excellent contribution from <https://github.com/songhuaixu>.
+Release 0.9.0 fixes a bug in the `PdfClipPath::len()` function thanks to an excellent contribution from <https://github.com/rockyzhengwu>, adds compilation target support to the `PDFIUM_STATIC_LIB_PATH` environment variable when linking `pdfium-render` to a statically-compiled Pdfium library thanks to an excellent contribution from <https://github.com/richarddd>, removes all deprecated items, simplifies lifetime handling across all object instances, and implements the `Send` and `Sync` traits for all object instances, allowing documents, pages, and page objects to be more easily used in multi-threaded applications. Note that Pdfium itself makes no guarantees about thread safety and should be assumed _not_ to be thread safe; for more discussion on the limitations of multi-threading in Pdfium, see the "Multi-threading" section below. For a complete list of deprecated items that have been removed, see <https://github.com/ajrcarey/pdfium-render/issues/36>.
 
 ## Binding to Pdfium
 
@@ -136,43 +135,53 @@ The `static` crate feature offers an alternative to dynamic linking if you prefe
 
 As a convenience, `pdfium-render` can instruct `cargo` to link to either a dynamically-built or a statically-built Pdfium library for you. To link to a dynamically-built library, set the `PDFIUM_DYNAMIC_LIB_PATH` environment variable when you run `cargo build`, like so:
 
-```rust
+```bash
     PDFIUM_DYNAMIC_LIB_PATH="/path/containing/your/dynamic/pdfium/library" cargo build
 ```
 
 `pdfium-render` will pass the following flags to `cargo`:
 
-```rust
+```bash
     cargo:rustc-link-lib=dylib=pdfium
     cargo:rustc-link-search=native=$PDFIUM_DYNAMIC_LIB_PATH
 ```
 
 To link to a statically-built library, set the path to the directory containing your library using the `PDFIUM_STATIC_LIB_PATH` environment variable when you run `cargo build`, like so:
 
-```rust
+```bash
     PDFIUM_STATIC_LIB_PATH="/path/containing/your/static/pdfium/library" cargo build
 ```
 
 `pdfium-render` will pass the following flags to `cargo`:
 
-```rust
+```bash
     cargo:rustc-link-lib=static=pdfium
     cargo:rustc-link-search=native=$PDFIUM_STATIC_LIB_PATH
 ```
 
 These two environment variables save you writing a custom `build.rs` yourself. If you have your own build pipeline that links Pdfium statically into your executable, simply leave these environment variables unset.
 
+`PDFIUM_STATIC_LIB_PATH` also supports per-target configuration by appending the target triple with underscores. For example, when cross-compiling for multiple targets:
+
+```bash
+    PDFIUM_STATIC_LIB_PATH_aarch64_apple_darwin="/path/to/arm64/pdfium" \
+    PDFIUM_STATIC_LIB_PATH_x86_64_apple_darwin="/path/to/x64/pdfium" \
+    cargo build --target aarch64-apple-darwin
+```
+
+The target-specific variable takes precedence over the generic one, allowing you to set a default path with `PDFIUM_STATIC_LIB_PATH` and override it for specific targets.
+
 Note that the path you set in either `PDFIUM_DYNAMIC_LIB_PATH` or `PDFIUM_STATIC_LIB_PATH` should not include the filename of the library itself; it should just be the path of the containing directory. You must make sure your library is named in the appropriate way for your target platform (`libpdfium.so` or `libpdfium.a` on Linux and macOS, for example) in order for the Rust compiler to locate it.
 
 Depending on how your Pdfium library was built, you may need to also link against a C++ standard library. To link against the GNU C++ standard library (`libstdc++`), use the optional `libstdc++` feature. `pdfium-render` will pass the following additional flag to `cargo`:
 
-```rust
+```bash
     cargo:rustc-link-lib=dylib=stdc++
 ```
 
 To link against the LLVM C++ standard library (`libc++`), use the optional `libc++` feature. `pdfium-render` will pass the following additional flag to `cargo`:
 
-```rust
+```bash
     cargo:rustc-link-lib=dylib=c++
 ```
 
@@ -180,7 +189,7 @@ Alternatively, use the `link-cplusplus` crate to link against a C++ standard lib
 
 On macOS systems, it may also be necessary to use the optional `core_graphics` feature to link against the CoreGraphics framework. `pdfium-render` will pass the following additional flag to `cargo`:
 
-```rust
+```bash
     cargo:rustc-link-lib=framework=CoreGraphics
 ```
 
@@ -209,30 +218,31 @@ An example of safely using `pdfium-render` as part of a multi-threaded parallel 
 This crate provides the following optional features:
 
 * `bindings`: uses `cbindgen` to generate Rust bindings to the Pdfium functions defined in the `include/*.h` files each time `cargo build` is run. If `cbindgen` or any of its dependencies are not available then the build will fail.
-* `image`: controls whether the `image` crate should be used by `pdfium-render` to provide page and page object rendering functionality. Projects that do not require page or page object rendering can disable this feature to avoid compiling the `image` crate into their binaries. It is possible to control the specific version of `image` that will be used by `pdfium-render`; see the "Crate features for selecting `image` versions" section below.
+* `console_log`: when compiling to WASM, instructs `pdfium-render` to initialize `console_log`-based logging to the browser console. This can be used if you do not initialize `console_log` in your application. See <https://github.com/ajrcarey/pdfium-render/tree/master/examples/README.md> for more details.
 * `libstdc++`: links against the GNU C++ standard library when compiling. Requires the `static` feature. See the "Static linking" section above.
 * `libc++`: links against the LLVM C++ standard library when compiling. Requires the `static` feature. See the "Static linking" section above.
 * `core_graphics`: links against the CoreGraphics library on macOS systems when compiling. Requires the `static` feature. See the "Static linking" section above.
 * `static`: enables binding to a statically-linked build of Pdfium. See the "Static linking" section above.
-* `sync`: provides implementations of the `Send` and `Sync` traits for the `Pdfium` and `PdfDocument` structs. This is useful for creating static instances that can be used with `lazy_static` or `once_cell`, although those instances are not guaranteed to be thread-safe. Use entirely at your own risk. Requires the `thread_safe` feature.
 * `thread_safe`: wraps access to Pdfium behind a mutex to ensure thread-safe access to Pdfium. See the "Multithreading" section above.
 
 #### Crate features for selecting `image` versions
 
-Release 0.8.26 introduced new features to explicitly control the version of the `image` crate used by `pdfium-render`:
+Release 0.8.26 introduced new features to explicitly control the version of the `image` crate used by `pdfium-render` to provide page and page object rendering functionality:
 
 * `image_latest`: uses the latest version of the `image` crate. This is currently `image_025`.
 * `image_025`: uses `image` crate version `0.25`.
 * `image_024`: uses `image` crate version `0.24`.
 * `image_023`: uses `image` crate version `0.23`.
 
+Projects that do not require page or page object rendering can disable these features to avoid compiling the `image` crate into their binaries.
+
 #### Crate features for selecting Pdfium API versions
 
 Release 0.8.24 introduced new features to explicitly control the version of the Pdfium API used by `pdfium-render`:
 
 * `pdfium_future`: binds `PdfiumLibraryBindings` to the latest published Pdfium API at <https://pdfium.googlesource.com/pdfium/+/refs/heads/main/public>, irrespective of whether those changes have been built into a release at <https://github.com/bblanchon/pdfium-binaries/releases>. Useful for testing unreleased changes.
-* `pdfium_latest`: binds `PdfiumLibraryBindings` to the latest released build of Pdfium at <https://github.com/bblanchon/pdfium-binaries/releases> supported by `pdfium-render`. This is currently `pdfium_7543`.
-* `pdfium_7543`, `pdfium_7350`, `pdfium_7215`, `pdfium_7123`, `pdfium_6996` (but see note below), `pdfium_6721`, `pdfium_6666`, `pdfium_6611`, `pdfium_6569`, `pdfium_6555`, `pdfium_6490`, `pdfium_6406`, `pdfium_6337`, `pdfium_6295`, `pdfium_6259`, `pdfium_6164`, `pdfium_6124`, `pdfium_6110`, `pdfium_6084`, `pdfium_6043`, `pdfium_6015`, `pdfium_5961`: binds `PdfiumLibraryBindings` to the specified version of the Pdfium API.
+* `pdfium_latest`: binds `PdfiumLibraryBindings` to the latest released build of Pdfium at <https://github.com/bblanchon/pdfium-binaries/releases> supported by `pdfium-render`. This is currently `pdfium_7881`.
+* `pdfium_7881`, `pdfium_7763`, `pdfium_7543`, `pdfium_7350`, `pdfium_7215`, `pdfium_7123`, `pdfium_6996` (but see note below), `pdfium_6721`, `pdfium_6666`, `pdfium_6611`, `pdfium_6569`, `pdfium_6555`, `pdfium_6490`, `pdfium_6406`, `pdfium_6337`, `pdfium_6295`, `pdfium_6259`, `pdfium_6164`, `pdfium_6124`, `pdfium_6110`, `pdfium_6084`, `pdfium_6043`, `pdfium_6015`, `pdfium_5961`: binds `PdfiumLibraryBindings` to the specified version of the Pdfium API.
 
 Note that Pdfium build 6996 contains a known bug affecting macOS systems. For more information and workarounds, see <https://github.com/ajrcarey/pdfium-render/issues/192>.
 
@@ -272,14 +282,18 @@ would translate to the following Rust code:
     let bindings = pdfium.bindings();
     let test_doc = "test.pdf";
 
-    bindings.FPDF_InitLibrary();
-    let doc = bindings.FPDF_LoadDocument(test_doc, None);
-    // ... do something with doc
-    bindings.FPDF_CloseDocument(doc);
-    bindings.FPDF_DestroyLibrary();
+    unsafe {
+        bindings.FPDF_InitLibrary();
+        let doc = bindings.FPDF_LoadDocument(test_doc, None);
+        // ... do something with doc
+        bindings.FPDF_CloseDocument(doc);
+        bindings.FPDF_DestroyLibrary();
+    }
 ```
 
-Pdfium's API uses three different string types: classic C-style null-terminated char arrays, UTF-8 byte arrays, and a UTF-16LE byte array type named `FPDF_WIDESTRING`. For functions that take a C-style string or a UTF-8 byte array, `pdfium-render`'s binding will take the standard Rust `&str` type. For functions that take an `FPDF_WIDESTRING`, `pdfium-render` exposes two functions: the vanilla `FPDF_*()` function that takes an `FPDF_WIDESTRING`, and an additional `FPDF_*_str()` helper function that takes a standard Rust `&str` and converts it internally to an `FPDF_WIDESTRING` before calling Pdfium. Examples of functions with additional `_str()` helpers include `FPDFBookmark_Find()`, `FPDFText_SetText()`, `FPDFText_FindStart()`, `FPDFDoc_AddAttachment()`, `FPDFAnnot_SetStringValue()`, and `FPDFAttachment_SetStringValue()`.
+As at Pdfium release `pdfium_7881` there are 469 exported functions in the Pdfium API.
+
+The Pdfium API uses three different string types: classic C-style null-terminated char arrays, UTF-8 byte arrays, and a UTF-16LE byte array type named `FPDF_WIDESTRING`. For functions that take a C-style string or a UTF-8 byte array, `pdfium-render`'s binding will take the standard Rust `&str` type. For functions that take an `FPDF_WIDESTRING`, `pdfium-render` exposes two functions: the vanilla `FPDF_*()` function that takes an `FPDF_WIDESTRING`, and an additional `FPDF_*_str()` helper function that takes a standard Rust `&str` and converts it internally to an `FPDF_WIDESTRING` before calling Pdfium. Examples of functions with additional `_str()` helpers include `FPDFBookmark_Find()`, `FPDFText_SetText()`, `FPDFText_FindStart()`, `FPDFDoc_AddAttachment()`, `FPDFAnnot_SetStringValue()`, and `FPDFAttachment_SetStringValue()`.
 
 The `PdfiumLibraryBindings::get_pdfium_utf16le_bytes_from_str()` and `PdfiumLibraryBindings::get_string_from_pdfium_utf16le_bytes()` utility functions are provided for converting to and from `FPDF_WIDESTRING` in your own code.
 
@@ -290,22 +304,12 @@ Image pixel data in Pdfium is encoded in either three-channel BGR or four-channe
 Simultaneously using both the high-level interface provided by `pdfium-render` and the low-level Pdfium API is also supported. The `PdfiumLibraryBindings::get_handle_from_document()`, `PdfiumLibraryBindings::get_handle_from_page()`, `PdfiumLibraryBindings::get_handle_from_object()`, `PdfiumLibraryBindings::get_handle_from_bitmap()`, `PdfiumLibraryBindings::get_fs_matrix_from_matrix()`, `PdfiumLibraryBindings::get_fs_rect_from_rect()`, `PdfiumLibraryBindings::get_fs_quad_points_from_quad_points()`,
 `PdfiumLibraryBindings::get_dword_from_color()`, and `PdfiumLibraryBindings::get_dword_and_alpha_from_color()` utility functions are provided for retrieving Pdfium object handles and values from `pdfium-render` object instances, so you can reference the high-level constructs when calling the Pdfium API.
 
-## Development status
-
-As at Pdfium release `pdfium_7543` there are 436 `FPDF_*` functions in the Pdfium API. Bindings to these functions are available in the `PdfiumLibraryBindings` trait.
-
-The initial focus of this crate was on rendering pages in a PDF file; consequently, high-level implementations of `FPDF_*` functions related to page rendering were prioritised. By 1.0, the functionality of all `FPDF_*` functions exported by all Pdfium modules will be available, with the exception of certain functions specific to interactive scripting, user interaction, and printing.
-
-* Releases numbered 0.4.x added support for basic page rendering Pdfium functions to `pdfium-render`.
-* Releases numbered 0.5.x-0.6.x added support for most read-only Pdfium functions to `pdfium-render`.
-* Releases numbered 0.7.x added support for most Pdfium page object creation and editing functions to `pdfium-render`. 
-* Releases numbered 0.8.x aim to progressively add support for all remaining Pdfium editing functions to `pdfium-render`.
-* Releases numbered 0.9.x aim to fill any remaining gaps in the high-level interface prior to 1.0.
-
-Some functions and type definitions have been renamed or revised since their initial implementations. The initial implementations are still available but are marked as deprecated. These deprecated items will be removed in release 0.9.0.
-
 ## Version history
 
+* 0.9.3: increments the `pdfium_latest` feature to `pdfium_7881` to match new Pdfium release 7881 at <https://github.com/bblanchon/pdfium-binaries>; fixes a bug where `pdfium-render` would fail to compile on targets `c_char` is unsigned thanks to an excellent contribution from <https://github.com/virtuallynathan>; adds the new `PdfDocument::catalog()` and `PdfDocument::catalog_mut()` functions together with the new `PdfCatalog` struct for interacting with a document's catalog; adds a new `PdfPageTextObject::set_unscaled_font_size()` function that allows directly setting the font size of an existing text object.
+* 0.9.2: changes the visibility of the `PdfiumLibraryBindingsAccessor` trait from `pub(crate)` to `pub`, easing use of the raw `FPDF_*` API by crate consumers thanks to an excellent observation by <https://github.com/martin-kolarik>; changes the signature of the `PdfBitmap::empty()` and `PdfBitmap::from_bytes()` functions to remove the `bindings` argument which is no longer required; reworks `PdfBitmap::from_bytes()` as a safe function and adds a new unsafe `PdfBitmap::from_bytes_unchecked()` function, both thanks to excellent contributions from <https://github.com/alecbarber>; adds a new `PdfiumCustomFontProvider` trait that can be used to override Pdfium's default platform font provider by passing a trait implementation to the new `Pdfium::set_custom_font_provider()` function. The font provider is called each time Pdfium needs to perform font substitution, allowing fine-grained control over font matching, loading, and caching. A new `examples/custom_font_provider.rs` example demonstrates the new functionality.
+* 0.9.1: increments the `pdfium_latest` feature to `pdfium_7763` to match new Pdfium release 7763 at <https://github.com/bblanchon/pdfium-binaries>; relaxes lifetime restrictions on `PdfPageTextSegment` and `PdfPageTextChars` thanks to an excellent contribution from <https://github.com/owl-from-hogvarts>; adds a new `console_log` crate feature to control initialization of `console_log`-based logging to the console browser in WASM builds, thanks to an excellent contribution from <https://github.com/tectin0>; adds a new `PdfPageTextObject::is_visible()` utility function in response to an excellent suggestion by <https://github.com/cobnett3>.
+* 0.9.0: fixes a bug in the `PdfClipPath::len()` function, thanks to an excellent contribution from <https://github.com/rockyzhengwu>; adds compilation target support to the `PDFIUM_STATIC_LIB_PATH` environment variable when linking `pdfium-render` to a statically-compiled Pdfium library, thanks to an excellent contribution from <https://github.com/richarddd>; removes all deprecated items; simplifies lifetime handling across all object instances; implements the `Send` and `Sync` traits for all object instances; changes the underlying data type for `PdfPageIndex` from `u16` to `c_int` to match Pdfium's internal page index data type definition; marks all Pdfium API functions as `unsafe` in `PdfLibraryBindings` in keeping with Rust safety best practices.
 * 0.8.37: increments the `pdfium_latest` feature to `pdfium_7543` to match new Pdfium release 7543 at <https://github.com/bblanchon/pdfium-binaries>; adds new `PdfRenderConfig::set_fixed_size()`, `PdfRenderConfig::set_fixed_width()`, and `PdfRenderConfig::set_fixed_height()` functions for more finely-grained rendering control thanks to an excellent suggestion by <https://github.com/newinnovations>; adds new `PdfRenderConfig::set_fixed_size_to_bitmap()` and `PdfRenderConfig::scale_page_to_bitmap()` functions; adds new `PdfPageObject::get_clip_path()` function thanks to an excellent contribution from <https://github.com/abdelkarim>; adds new `PdfPageImageObject::get_raw_image_data()` function thanks to an excellent contribution from <https://github.com/zamf>; adds new functions `PdfPageObject::is_active()`, `PdfPageObject::set_active()`, `PdfPageObject::is_inactive()`, and `PdfPageObject::set_inactive()` for setting and retrieving the object status on its containing page.
 * 0.8.36: ignores all fields in the `libloading::Error::DlOpen` enum variant in order to remain compatible with both old and new versions of the `libloading` crate; fixes a bug in the `PdfPageText::chars_for_object()` function thanks to an excellent investigation by <https://github.com/bikallem>; adds `Drop` trait implementations to all unowned `PdfPageObject` types thanks to an excellent investigation by <https://github.com/def-roth>.
 * 0.8.35: increments the `pdfium_latest` feature to `pdfium_7350` to match new Pdfium release 7350 at <https://github.com/bblanchon/pdfium-binaries>; fixes a bug in the WASM implementation of bezier curves thanks to an excellent contribution from <https://github.com/marcosc90>; fixes a bug in example `examples/image_extract.rs`; adds coordinate system ordering protection to the `PdfRect` struct initializers thanks to an excellent suggestion from <https://github.com/zecuria>.

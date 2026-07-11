@@ -5,12 +5,15 @@ use crate::bindgen::{
     FPDF_ERR_UNKNOWN,
 };
 use std::error::Error;
-use std::ffi::IntoStringError;
+use std::ffi::{IntoStringError, NulError};
 use std::fmt::{Display, Formatter, Result};
 use std::num::ParseIntError;
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::JsValue;
+
+#[cfg(doc)]
+use crate::pdfium::Pdfium;
 
 /// A wrapped internal library error from Pdfium's `FPDF_ERR_*` constant values.
 ///
@@ -43,12 +46,13 @@ pub enum PdfiumInternalError {
 /// A wrapper enum for handling Pdfium errors as standard Rust `Err` values.
 #[derive(Debug)]
 pub enum PdfiumError {
-    /// The Pdfium WASM module has not been configured.
+    /// The Pdfium WASM module has not been initialized.
+    ///
     /// It is essential that the exported `initialize_pdfium_render()` function be called
     /// from Javascript _before_ calling any `pdfium-render` function from within your Rust code.
     /// See: <https://github.com/ajrcarey/pdfium-render/blob/master/examples/index.html>
     #[cfg(target_arch = "wasm32")]
-    PdfiumWASMModuleNotConfigured,
+    PdfiumWasmModuleNotInitialized,
 
     /// An error occurred during dynamic binding to an external Pdfium library.
     #[cfg(not(target_arch = "wasm32"))]
@@ -58,6 +62,11 @@ pub enum PdfiumError {
     /// to a C string. The wrapped string value contains more information.
     #[cfg(not(target_arch = "wasm32"))]
     LoadLibraryFunctionNameError(String),
+
+    /// The global library bindings have already been initialized based on the
+    /// first call to [Pdfium::new]. Bindings initialization can only occur once
+    /// during the lifetime of the program.
+    PdfiumLibraryBindingsAlreadyInitialized,
 
     UnrecognizedPath,
     PdfClipPathSegmentIndexOutOfBounds,
@@ -88,8 +97,10 @@ pub enum PdfiumError {
     UnknownPdfSecurityHandlerRevision,
     UnknownPdfSignatureModificationDetectionPermissionLevel,
     UnsupportedPdfPageObjectType,
+    NoTextSegmentsInPageText,
     TextSegmentIndexOutOfBounds,
     TextSearchTargetIsEmpty,
+    NoCharsInPageTextChars,
     CharIndexOutOfBounds,
     NoCharsInPageObject,
     NoCharsInAnnotation,
@@ -119,6 +130,8 @@ pub enum PdfiumError {
     PageAnnotationAttachmentPointIndexOutOfBounds,
     NoAttachmentPointsInPageAnnotation,
     CoordinateConversionFunctionIndicatedError,
+    InvalidFontSize,
+    NoLanguageSetInDocumentCatalog,
 
     /// Pdfium does not safely support moving page object ownership from one document to another.
     CannotMoveObjectAcrossDocuments,
@@ -220,8 +233,21 @@ pub enum PdfiumError {
     /// `u16` size allowed by `pdfium-render`.
     ImageSizeOutOfBounds,
 
+    #[cfg(not(target_arch = "wasm32"))]
+    /// When constructing a [crate::pdf::bitmap::PdfBitmap] from a raw buffer, the buffer
+    /// must be large enough to contain the bitmap's pixels.
+    ///
+    /// The method which returns this error is not available on WASM.
+    ImageBufferTooSmall,
+
     /// An I/O error occurred during a Pdfium file operation.
     IoError(std::io::Error),
+
+    /// An error occurred during conversion of a given user font path to a CString.
+    InvalidUserFontPath(NulError),
+
+    /// Pdfium does not include a default font provider implementation for the current platform.
+    NoPlatformDefaultFontProvider,
 
     /// A wrapped internal library error from Pdfium's `FPDF_ERR_*` constant values.
     PdfiumLibraryInternalError(PdfiumInternalError),

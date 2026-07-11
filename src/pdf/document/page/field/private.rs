@@ -14,17 +14,23 @@ pub(crate) mod internal {
         FPDF_FORMFLAG_TEXT_PASSWORD, FPDF_FORMHANDLE, FPDF_OBJECT_NAME, FPDF_OBJECT_STREAM,
         FPDF_OBJECT_STRING, FPDF_WCHAR,
     };
-    use crate::bindings::PdfiumLibraryBindings;
     use crate::error::{PdfiumError, PdfiumInternalError};
     use crate::pdf::appearance_mode::PdfAppearanceMode;
     use crate::pdf::document::page::field::PdfFormFieldCommon;
+    use crate::pdfium::PdfiumLibraryBindingsAccessor;
     use crate::utils::dates::date_time_to_pdf_string;
     use crate::utils::mem::create_byte_buffer;
     use crate::utils::utf16le::get_string_from_pdfium_utf16le_bytes;
     use bitflags::bitflags;
     use chrono::Utc;
 
-    #[cfg(any(feature = "pdfium_future", feature = "pdfium_7350"))]
+    #[cfg(any(
+        feature = "pdfium_future",
+        feature = "pdfium_7881",
+        feature = "pdfium_7763",
+        feature = "pdfium_7543",
+        feature = "pdfium_7350"
+    ))]
     use std::os::raw::c_int;
 
     bitflags! {
@@ -169,18 +175,20 @@ pub(crate) mod internal {
     }
 
     /// Internal crate-specific functionality common to all [PdfFormField] objects.
-    pub trait PdfFormFieldPrivate<'a>: PdfFormFieldCommon {
+    pub(crate) trait PdfFormFieldPrivate<'a>:
+        PdfFormFieldCommon + PdfiumLibraryBindingsAccessor<'a>
+    {
         /// Returns the internal `FPDF_FORMHANDLE` handle for this [PdfFormField].
         fn form_handle(&self) -> FPDF_FORMHANDLE;
 
         /// Returns the internal `FPDF_ANNOTATION` handle for this [PdfFormField].
         fn annotation_handle(&self) -> FPDF_ANNOTATION;
 
-        /// Returns the [PdfiumLibraryBindings] used by this [PdfFormField].
-        fn bindings(&self) -> &dyn PdfiumLibraryBindings;
-
         /// Internal implementation of [PdfFormFieldCommon::name()].
         fn name_impl(&self) -> Option<String> {
+            #[cfg(feature = "thread_safe")]
+            let _ffi = crate::pdfium::FfiLock::acquire();
+
             // Retrieving the field name from Pdfium is a two-step operation. First, we call
             // FPDFAnnot_GetFormFieldName() with a null buffer; this will retrieve the length of
             // the field name text in bytes. If the length is zero, then the field name is not set.
@@ -189,12 +197,14 @@ pub(crate) mod internal {
             // length and call FPDFAnnot_GetFormFieldName() again with a pointer to the buffer;
             // this will write the field name to the buffer in UTF16LE format.
 
-            let buffer_length = self.bindings().FPDFAnnot_GetFormFieldName(
-                self.form_handle(),
-                self.annotation_handle(),
-                std::ptr::null_mut(),
-                0,
-            );
+            let buffer_length = unsafe {
+                self.bindings().FPDFAnnot_GetFormFieldName(
+                    self.form_handle(),
+                    self.annotation_handle(),
+                    std::ptr::null_mut(),
+                    0,
+                )
+            };
 
             if buffer_length == 0 {
                 // The field name is not present.
@@ -203,12 +213,14 @@ pub(crate) mod internal {
             } else {
                 let mut buffer = create_byte_buffer(buffer_length as usize);
 
-                let result = self.bindings().FPDFAnnot_GetFormFieldName(
-                    self.form_handle(),
-                    self.annotation_handle(),
-                    buffer.as_mut_ptr() as *mut FPDF_WCHAR,
-                    buffer_length,
-                );
+                let result = unsafe {
+                    self.bindings().FPDFAnnot_GetFormFieldName(
+                        self.form_handle(),
+                        self.annotation_handle(),
+                        buffer.as_mut_ptr() as *mut FPDF_WCHAR,
+                        buffer_length,
+                    )
+                };
 
                 debug_assert_eq!(result, buffer_length);
 
@@ -219,6 +231,9 @@ pub(crate) mod internal {
         /// Internal implementation of `value()` function shared by value-carrying form field widgets
         /// such as text fields. Not exposed directly by [PdfFormFieldCommon].
         fn value_impl(&self) -> Option<String> {
+            #[cfg(feature = "thread_safe")]
+            let _ffi = crate::pdfium::FfiLock::acquire();
+
             // Retrieving the field value from Pdfium is a two-step operation. First, we call
             // FPDFAnnot_GetFormFieldValue() with a null buffer; this will retrieve the length of
             // the form value text in bytes. If the length is zero, then the form value is not set.
@@ -227,12 +242,14 @@ pub(crate) mod internal {
             // length and call FPDFAnnot_GetFormFieldValue() again with a pointer to the buffer;
             // this will write the field value to the buffer in UTF16LE format.
 
-            let buffer_length = self.bindings().FPDFAnnot_GetFormFieldValue(
-                self.form_handle(),
-                self.annotation_handle(),
-                std::ptr::null_mut(),
-                0,
-            );
+            let buffer_length = unsafe {
+                self.bindings().FPDFAnnot_GetFormFieldValue(
+                    self.form_handle(),
+                    self.annotation_handle(),
+                    std::ptr::null_mut(),
+                    0,
+                )
+            };
 
             if buffer_length == 0 {
                 // The field value is not present.
@@ -241,12 +258,14 @@ pub(crate) mod internal {
             } else {
                 let mut buffer = create_byte_buffer(buffer_length as usize);
 
-                let result = self.bindings().FPDFAnnot_GetFormFieldValue(
-                    self.form_handle(),
-                    self.annotation_handle(),
-                    buffer.as_mut_ptr() as *mut FPDF_WCHAR,
-                    buffer_length,
-                );
+                let result = unsafe {
+                    self.bindings().FPDFAnnot_GetFormFieldValue(
+                        self.form_handle(),
+                        self.annotation_handle(),
+                        buffer.as_mut_ptr() as *mut FPDF_WCHAR,
+                        buffer_length,
+                    )
+                };
 
                 debug_assert_eq!(result, buffer_length);
 
@@ -258,25 +277,35 @@ pub(crate) mod internal {
         /// field widgets such as text fields. Not exposed directly by [PdfFormFieldCommon].
         #[inline]
         fn set_value_impl(&mut self, value: &str) -> Result<(), PdfiumError> {
+            #[cfg(feature = "thread_safe")]
+            let _ffi = crate::pdfium::FfiLock::acquire();
+
             self.bindings()
-                .to_result(self.bindings().FPDFAnnot_SetStringValue_str(
-                    self.annotation_handle(),
-                    "M",
-                    &date_time_to_pdf_string(Utc::now()),
-                ))
+                .to_result(unsafe {
+                    self.bindings().FPDFAnnot_SetStringValue_str(
+                        self.annotation_handle(),
+                        "M",
+                        &date_time_to_pdf_string(Utc::now()),
+                    )
+                })
                 .and_then(|_| {
-                    self.bindings()
-                        .to_result(self.bindings().FPDFAnnot_SetStringValue_str(
+                    self.bindings().to_result(unsafe {
+                        self.bindings().FPDFAnnot_SetStringValue_str(
                             self.annotation_handle(),
                             "V",
                             value,
-                        ))
+                        )
+                    })
                 })
         }
 
         /// Internal implementation of `export_value()` function shared by on/off form field widgets
         /// such as checkbox and radio button fields. Not exposed directly by [PdfFormFieldCommon].
+        #[allow(dead_code)] // TODO: AJRC - 30/3/26 - will be removed if not required by PdfFormRadioButtonField
         fn export_value_impl(&self) -> Option<String> {
+            #[cfg(feature = "thread_safe")]
+            let _ffi = crate::pdfium::FfiLock::acquire();
+
             // Retrieving the export value from Pdfium is a two-step operation. First, we call
             // FPDFAnnot_GetFormFieldExportValue() with a null buffer; this will retrieve the length of
             // the export value text in bytes. If the length is zero, then the export value is not set.
@@ -285,12 +314,14 @@ pub(crate) mod internal {
             // length and call FPDFAnnot_GetFormFieldExportValue() again with a pointer to the buffer;
             // this will write the export value to the buffer in UTF16LE format.
 
-            let buffer_length = self.bindings().FPDFAnnot_GetFormFieldExportValue(
-                self.form_handle(),
-                self.annotation_handle(),
-                std::ptr::null_mut(),
-                0,
-            );
+            let buffer_length = unsafe {
+                self.bindings().FPDFAnnot_GetFormFieldExportValue(
+                    self.form_handle(),
+                    self.annotation_handle(),
+                    std::ptr::null_mut(),
+                    0,
+                )
+            };
 
             if buffer_length == 0 {
                 // The field value is not present.
@@ -299,12 +330,14 @@ pub(crate) mod internal {
             } else {
                 let mut buffer = create_byte_buffer(buffer_length as usize);
 
-                let result = self.bindings().FPDFAnnot_GetFormFieldExportValue(
-                    self.form_handle(),
-                    self.annotation_handle(),
-                    buffer.as_mut_ptr() as *mut FPDF_WCHAR,
-                    buffer_length,
-                );
+                let result = unsafe {
+                    self.bindings().FPDFAnnot_GetFormFieldExportValue(
+                        self.form_handle(),
+                        self.annotation_handle(),
+                        buffer.as_mut_ptr() as *mut FPDF_WCHAR,
+                        buffer_length,
+                    )
+                };
 
                 debug_assert_eq!(result, buffer_length);
 
@@ -319,18 +352,25 @@ pub(crate) mod internal {
         /// field is currently selected. As a result, this function may not return the expected
         /// result for fields with custom appearance streams.
         fn is_checked_impl(&self) -> Result<bool, PdfiumError> {
-            Ok(self.bindings().is_true(
+            #[cfg(feature = "thread_safe")]
+            let _ffi = crate::pdfium::FfiLock::acquire();
+
+            Ok(self.bindings().is_true(unsafe {
                 self.bindings()
-                    .FPDFAnnot_IsChecked(self.form_handle(), self.annotation_handle()),
-            ))
+                    .FPDFAnnot_IsChecked(self.form_handle(), self.annotation_handle())
+            }))
         }
 
         /// Internal implementation of `index_in_group()` function shared by checkable form field
         /// widgets such as radio buttons and checkboxes. Not exposed directly by [PdfFormFieldCommon].
         fn index_in_group_impl(&self) -> u32 {
-            let result = self
-                .bindings()
-                .FPDFAnnot_GetFormControlIndex(self.form_handle(), self.annotation_handle());
+            #[cfg(feature = "thread_safe")]
+            let _ffi = crate::pdfium::FfiLock::acquire();
+
+            let result = unsafe {
+                self.bindings()
+                    .FPDFAnnot_GetFormControlIndex(self.form_handle(), self.annotation_handle())
+            };
 
             if result < 0 {
                 // Pdfium uses a -1 value to signal an error.
@@ -344,18 +384,22 @@ pub(crate) mod internal {
         /// Returns the string value associated with the given key in the annotation dictionary
         /// of the [PdfPageAnnotation] containing this [PdfFormField], if any.
         fn get_string_value(&self, key: &str) -> Option<String> {
-            if !self.bindings().is_true(
+            #[cfg(feature = "thread_safe")]
+            let _ffi = crate::pdfium::FfiLock::acquire();
+
+            if !self.bindings().is_true(unsafe {
                 self.bindings()
-                    .FPDFAnnot_HasKey(self.annotation_handle(), key),
-            ) {
+                    .FPDFAnnot_HasKey(self.annotation_handle(), key)
+            }) {
                 // The key does not exist.
 
                 return None;
             }
 
-            let t = self
-                .bindings()
-                .FPDFAnnot_GetValueType(self.annotation_handle(), key) as u32;
+            let t = unsafe {
+                self.bindings()
+                    .FPDFAnnot_GetValueType(self.annotation_handle(), key)
+            } as u32;
 
             if t != FPDF_OBJECT_STRING && t != FPDF_OBJECT_NAME && t != FPDF_OBJECT_STREAM {
                 // The key exists, but the value associated with the key is not a string
@@ -373,12 +417,14 @@ pub(crate) mod internal {
             // length and call FPDFAnot_GetStringValue() again with a pointer to the buffer;
             // this will write the string value into the buffer.
 
-            let buffer_length = self.bindings().FPDFAnnot_GetStringValue(
-                self.annotation_handle(),
-                key,
-                std::ptr::null_mut(),
-                0,
-            );
+            let buffer_length = unsafe {
+                self.bindings().FPDFAnnot_GetStringValue(
+                    self.annotation_handle(),
+                    key,
+                    std::ptr::null_mut(),
+                    0,
+                )
+            };
 
             if buffer_length <= 2 {
                 // A buffer length of 2 indicates that the string value for the given key is
@@ -389,12 +435,14 @@ pub(crate) mod internal {
 
             let mut buffer = create_byte_buffer(buffer_length as usize);
 
-            let result = self.bindings().FPDFAnnot_GetStringValue(
-                self.annotation_handle(),
-                key,
-                buffer.as_mut_ptr() as *mut FPDF_WCHAR,
-                buffer_length,
-            );
+            let result = unsafe {
+                self.bindings().FPDFAnnot_GetStringValue(
+                    self.annotation_handle(),
+                    key,
+                    buffer.as_mut_ptr() as *mut FPDF_WCHAR,
+                    buffer_length,
+                )
+            };
 
             assert_eq!(result, buffer_length);
 
@@ -404,6 +452,9 @@ pub(crate) mod internal {
         /// Sets the string value associated with the given key in the annotation dictionary
         /// of the [PdfPageAnnotation] containing this [PdfFormField].
         fn set_string_value(&mut self, key: &str, value: &str) -> Result<(), PdfiumError> {
+            #[cfg(feature = "thread_safe")]
+            let _ffi = crate::pdfium::FfiLock::acquire();
+
             // Attempt to update the modification date first, before we apply the given value update.
             // That way, if updating the date fails, we can fail early.
 
@@ -418,14 +469,10 @@ pub(crate) mod internal {
             // With the modification date updated, we can now update the key and value
             // we were given.
 
-            if self
-                .bindings()
-                .is_true(self.bindings().FPDFAnnot_SetStringValue_str(
-                    self.annotation_handle(),
-                    key,
-                    value,
-                ))
-            {
+            if self.bindings().is_true(unsafe {
+                self.bindings()
+                    .FPDFAnnot_SetStringValue_str(self.annotation_handle(), key, value)
+            }) {
                 Ok(())
             } else {
                 Err(PdfiumError::PdfiumLibraryInternalError(
@@ -436,6 +483,9 @@ pub(crate) mod internal {
 
         /// Internal implementation of [PdfFormFieldCommon::appearance_mode_value()].
         fn appearance_mode_value_impl(&self, appearance_mode: PdfAppearanceMode) -> Option<String> {
+            #[cfg(feature = "thread_safe")]
+            let _ffi = crate::pdfium::FfiLock::acquire();
+
             // Retrieving the appearance mode value from Pdfium is a two-step operation.
             // First, we call FPDFAnnot_GetAP() with a null buffer; this will retrieve the length of
             // the appearance mode value text in bytes. If the length is zero, then the
@@ -445,12 +495,14 @@ pub(crate) mod internal {
             // length and call FPDFAnnot_GetAP() again with a pointer to the buffer;
             // this will write the appearance mode value to the buffer in UTF16LE format.
 
-            let buffer_length = self.bindings().FPDFAnnot_GetAP(
-                self.annotation_handle(),
-                appearance_mode.as_pdfium(),
-                std::ptr::null_mut(),
-                0,
-            );
+            let buffer_length = unsafe {
+                self.bindings().FPDFAnnot_GetAP(
+                    self.annotation_handle(),
+                    appearance_mode.as_pdfium(),
+                    std::ptr::null_mut(),
+                    0,
+                )
+            };
 
             if buffer_length == 0 {
                 // The appearance mode value is not present.
@@ -459,12 +511,14 @@ pub(crate) mod internal {
             } else {
                 let mut buffer = create_byte_buffer(buffer_length as usize);
 
-                let result = self.bindings().FPDFAnnot_GetAP(
-                    self.annotation_handle(),
-                    appearance_mode.as_pdfium(),
-                    buffer.as_mut_ptr() as *mut FPDF_WCHAR,
-                    buffer_length,
-                );
+                let result = unsafe {
+                    self.bindings().FPDFAnnot_GetAP(
+                        self.annotation_handle(),
+                        appearance_mode.as_pdfium(),
+                        buffer.as_mut_ptr() as *mut FPDF_WCHAR,
+                        buffer_length,
+                    )
+                };
 
                 debug_assert_eq!(result, buffer_length);
 
@@ -480,26 +534,45 @@ pub(crate) mod internal {
         /// Returns all the flags currently set on this form field.
         #[inline]
         fn get_flags_impl(&self) -> PdfFormFieldFlags {
-            PdfFormFieldFlags::from_bits_truncate(
+            #[cfg(feature = "thread_safe")]
+            let _ffi = crate::pdfium::FfiLock::acquire();
+
+            PdfFormFieldFlags::from_bits_truncate(unsafe {
                 self.bindings()
                     .FPDFAnnot_GetFormFieldFlags(self.form_handle(), self.annotation_handle())
-                    as u32,
-            )
+            } as u32)
         }
 
-        #[cfg(any(feature = "pdfium_future", feature = "pdfium_7350"))]
+        #[cfg(any(
+            feature = "pdfium_future",
+            feature = "pdfium_7881",
+            feature = "pdfium_7763",
+            feature = "pdfium_7543",
+            feature = "pdfium_7350"
+        ))]
         /// Sets all the flags on this form field.
         #[inline]
         fn set_flags_impl(&self, flags: PdfFormFieldFlags) -> bool {
-            self.bindings()
-                .is_true(self.bindings().FPDFAnnot_SetFormFieldFlags(
-                    self.form_handle(),
-                    self.annotation_handle(),
-                    flags.bits() as c_int,
-                ))
+            #[cfg(feature = "thread_safe")]
+            let _ffi = crate::pdfium::FfiLock::acquire();
+
+            unsafe {
+                self.bindings()
+                    .is_true(self.bindings().FPDFAnnot_SetFormFieldFlags(
+                        self.form_handle(),
+                        self.annotation_handle(),
+                        flags.bits() as c_int,
+                    ))
+            }
         }
 
-        #[cfg(any(feature = "pdfium_future", feature = "pdfium_7350"))]
+        #[cfg(any(
+            feature = "pdfium_future",
+            feature = "pdfium_7881",
+            feature = "pdfium_7763",
+            feature = "pdfium_7543",
+            feature = "pdfium_7350"
+        ))]
         /// Sets or clears a single flag on this form field.
         fn update_one_flag_impl(
             &self,
@@ -565,7 +638,13 @@ mod tests {
         Ok(())
     }
 
-    #[cfg(any(feature = "pdfium_future", feature = "pdfium_7350"))]
+    #[cfg(any(
+        feature = "pdfium_future",
+        feature = "pdfium_7881",
+        feature = "pdfium_7763",
+        feature = "pdfium_7543",
+        feature = "pdfium_7350"
+    ))]
     #[test]
     fn test_set_form_field_flags() -> Result<(), PdfiumError> {
         let pdfium = test_bind_to_pdfium();
@@ -607,7 +686,13 @@ mod tests {
         Ok(())
     }
 
-    #[cfg(any(feature = "pdfium_future", feature = "pdfium_7350"))]
+    #[cfg(any(
+        feature = "pdfium_future",
+        feature = "pdfium_7881",
+        feature = "pdfium_7763",
+        feature = "pdfium_7543",
+        feature = "pdfium_7350"
+    ))]
     #[test]
     fn test_update_one_form_field_flag() -> Result<(), PdfiumError> {
         let pdfium = test_bind_to_pdfium();

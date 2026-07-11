@@ -174,8 +174,27 @@ fn build_bindings_for_one_pdfium_release(release: &str) -> Result<(), BuildError
 }
 
 #[cfg(feature = "static")]
+/// Tries reading a target-specific value from the environment for the given environment variable
+/// by appending a suffix for the current build target to the given environment variable name,
+/// falling back to the non-suffixed variable name if no target-specific variable exists.
+/// For example, when building on a macOs system and passing in the PDFIUM_STATIC_LIB_PATH
+/// environment name, this function will first look for a `PDFIUM_STATIC_LIB_PATH_aarch64_apple_darwin`
+/// variable in the environment before falling back to `PDFIUM_STATIC_LIB_PATH`.
+fn get_target_suffixed_env_var(env_var: &str) -> Option<String> {
+    let target = std::env::var("TARGET").unwrap_or_default();
+    let target_suffixed_env_var = format!("{}_{}", env_var, target.replace('-', "_"));
+
+    println!("cargo:rerun-if-env-changed={}", target_suffixed_env_var);
+    println!("cargo:rerun-if-env-changed={}", env_var);
+
+    std::env::var(&target_suffixed_env_var)
+        .ok()
+        .or_else(|| std::env::var(env_var).ok())
+}
+
+#[cfg(feature = "static")]
 fn statically_link_pdfium() {
-    if let Ok(path) = std::env::var("PDFIUM_STATIC_LIB_PATH") {
+    if let Some(path) = get_target_suffixed_env_var("PDFIUM_STATIC_LIB_PATH") {
         // Instruct cargo to statically link the given library during the build.
 
         println!("cargo:rustc-link-lib=static=pdfium");
