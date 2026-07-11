@@ -5,7 +5,6 @@ pub mod common;
 pub(crate) mod private; // Keep private so that the PdfPageObjectsPrivate trait is not exposed.
 
 use crate::bindgen::{FPDF_DOCUMENT, FPDF_PAGE};
-use crate::bindings::PdfiumLibraryBindings;
 use crate::error::{PdfiumError, PdfiumInternalError};
 use crate::pdf::document::page::object::group::PdfPageGroupObject;
 use crate::pdf::document::page::object::ownership::PdfPageObjectOwnership;
@@ -18,6 +17,8 @@ use crate::pdf::document::page::objects::common::{
 use crate::pdf::document::page::objects::private::internal::PdfPageObjectsPrivate;
 use crate::pdf::document::page::PdfPageIndexCache;
 use crate::pdf::document::PdfDocument;
+use crate::pdfium::PdfiumLibraryBindingsAccessor;
+use std::marker::PhantomData;
 use std::os::raw::c_int;
 
 #[cfg(doc)]
@@ -39,21 +40,17 @@ pub struct PdfPageObjects<'a> {
     document_handle: FPDF_DOCUMENT,
     page_handle: FPDF_PAGE,
     ownership: PdfPageObjectOwnership,
-    bindings: &'a dyn PdfiumLibraryBindings,
+    lifetime: PhantomData<&'a FPDF_PAGE>,
 }
 
 impl<'a> PdfPageObjects<'a> {
     #[inline]
-    pub(crate) fn from_pdfium(
-        document_handle: FPDF_DOCUMENT,
-        page_handle: FPDF_PAGE,
-        bindings: &'a dyn PdfiumLibraryBindings,
-    ) -> Self {
+    pub(crate) fn from_pdfium(document_handle: FPDF_DOCUMENT, page_handle: FPDF_PAGE) -> Self {
         Self {
             document_handle,
             page_handle,
             ownership: PdfPageObjectOwnership::owned_by_page(document_handle, page_handle),
-            bindings,
+            lifetime: PhantomData,
         }
     }
 
@@ -89,7 +86,7 @@ impl<'a> PdfPageObjects<'a> {
     /// you will need to manually add to it the objects you want to manipulate.
     #[inline]
     pub fn create_empty_group(&self) -> PdfPageGroupObject<'a> {
-        PdfPageGroupObject::from_pdfium(self.document_handle(), self.page_handle(), self.bindings())
+        PdfPageGroupObject::from_pdfium(self.document_handle(), self.page_handle())
     }
 
     /// Creates a new [PdfPageXObjectFormObject] object from the page objects on this [PdfPage],
@@ -98,18 +95,24 @@ impl<'a> PdfPageObjects<'a> {
         &self,
         destination: &mut PdfDocument<'a>,
     ) -> Result<PdfPageObject<'a>, PdfiumError> {
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
         let page_index =
             PdfPageIndexCache::get_index_for_page(self.document_handle(), self.page_handle());
 
         match page_index {
             Some(page_index) => {
-                let x_object = self.bindings().FPDF_NewXObjectFromPage(
-                    destination.handle(),
-                    self.document_handle(),
-                    page_index as c_int,
-                );
+                let x_object = unsafe {
+                    self.bindings().FPDF_NewXObjectFromPage(
+                        destination.handle(),
+                        self.document_handle(),
+                        page_index as c_int,
+                    )
+                };
 
-                let object_handle = self.bindings().FPDF_NewFormObjectFromXObject(x_object);
+                let object_handle =
+                    unsafe { self.bindings().FPDF_NewFormObjectFromXObject(x_object) };
                 if object_handle.is_null() {
                     return Err(PdfiumError::PdfiumLibraryInternalError(
                         crate::error::PdfiumInternalError::Unknown,
@@ -119,10 +122,11 @@ impl<'a> PdfPageObjects<'a> {
                 let object = PdfPageXObjectFormObject::from_pdfium(
                     object_handle,
                     PdfPageObjectOwnership::owned_by_document(destination.handle()),
-                    self.bindings(),
                 );
 
-                self.bindings().FPDF_CloseXObject(x_object);
+                unsafe {
+                    self.bindings().FPDF_CloseXObject(x_object);
+                }
 
                 Ok(PdfPageObject::XObjectForm(object))
             }
@@ -130,7 +134,13 @@ impl<'a> PdfPageObjects<'a> {
         }
     }
 
-    #[cfg(any(feature = "pdfium_future", feature = "pdfium_7350"))]
+    #[cfg(any(
+        feature = "pdfium_future",
+        feature = "pdfium_7881",
+        feature = "pdfium_7763",
+        feature = "pdfium_7543",
+        feature = "pdfium_7350"
+    ))]
     /// Adds the given [PdfPageObject] to this page objects collection, inserting it into
     /// the collection at the given index. The object's memory ownership will be transferred
     /// to the [PdfPage] containing this page objects collection, and the updated page object
@@ -156,19 +166,21 @@ impl<'a> PdfPageObjectsPrivate<'a> for PdfPageObjects<'a> {
     }
 
     #[inline]
-    fn bindings(&self) -> &'a dyn PdfiumLibraryBindings {
-        self.bindings
-    }
-
-    #[inline]
     fn len_impl(&self) -> PdfPageObjectIndex {
-        self.bindings.FPDFPage_CountObjects(self.page_handle) as PdfPageObjectIndex
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        (unsafe { self.bindings().FPDFPage_CountObjects(self.page_handle) }) as PdfPageObjectIndex
     }
 
     fn get_impl(&self, index: PdfPageObjectIndex) -> Result<PdfPageObject<'a>, PdfiumError> {
-        let object_handle = self
-            .bindings
-            .FPDFPage_GetObject(self.page_handle, index as c_int);
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        let object_handle = unsafe {
+            self.bindings()
+                .FPDFPage_GetObject(self.page_handle, index as c_int)
+        };
 
         if object_handle.is_null() {
             if index >= self.len() {
@@ -208,3 +220,11 @@ impl<'a> PdfPageObjectsPrivate<'a> for PdfPageObjects<'a> {
         object.remove_object_from_page().map(|_| object)
     }
 }
+
+impl<'a> PdfiumLibraryBindingsAccessor<'a> for PdfPageObjects<'a> {}
+
+#[cfg(feature = "thread_safe")]
+unsafe impl<'a> Send for PdfPageObjects<'a> {}
+
+#[cfg(feature = "thread_safe")]
+unsafe impl<'a> Sync for PdfPageObjects<'a> {}

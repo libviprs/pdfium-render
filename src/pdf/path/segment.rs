@@ -5,10 +5,11 @@ use crate::bindgen::{
     FPDF_PATHSEGMENT, FPDF_SEGMENT_BEZIERTO, FPDF_SEGMENT_LINETO, FPDF_SEGMENT_MOVETO,
     FPDF_SEGMENT_UNKNOWN,
 };
-use crate::bindings::PdfiumLibraryBindings;
 use crate::error::PdfiumError;
 use crate::pdf::matrix::PdfMatrix;
 use crate::pdf::points::PdfPoints;
+use crate::pdfium::PdfiumLibraryBindingsAccessor;
+use std::marker::PhantomData;
 use std::os::raw::c_float;
 
 /// The type of a single [PdfPathSegment].
@@ -40,20 +41,16 @@ impl PdfPathSegmentType {
 pub struct PdfPathSegment<'a> {
     handle: FPDF_PATHSEGMENT,
     matrix: Option<PdfMatrix>,
-    bindings: &'a dyn PdfiumLibraryBindings,
+    lifetime: PhantomData<&'a FPDF_PATHSEGMENT>,
 }
 
 impl<'a> PdfPathSegment<'a> {
     #[inline]
-    pub(crate) fn from_pdfium(
-        handle: FPDF_PATHSEGMENT,
-        matrix: Option<PdfMatrix>,
-        bindings: &'a dyn PdfiumLibraryBindings,
-    ) -> Self {
+    pub(crate) fn from_pdfium(handle: FPDF_PATHSEGMENT, matrix: Option<PdfMatrix>) -> Self {
         Self {
             handle,
             matrix,
-            bindings,
+            lifetime: PhantomData,
         }
     }
 
@@ -63,39 +60,41 @@ impl<'a> PdfPathSegment<'a> {
         self.handle
     }
 
-    /// Returns the [PdfiumLibraryBindings] used by this [PdfPathSegment].
-    #[inline]
-    pub fn bindings(&self) -> &'a dyn PdfiumLibraryBindings {
-        self.bindings
-    }
-
     /// Returns the [PdfPathSegmentType] of this [PdfPathSegment].
     #[inline]
     pub fn segment_type(&self) -> PdfPathSegmentType {
-        PdfPathSegmentType::from_pdfium(self.bindings().FPDFPathSegment_GetType(self.handle))
-            .unwrap_or(PdfPathSegmentType::Unknown)
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        PdfPathSegmentType::from_pdfium(unsafe {
+            self.bindings().FPDFPathSegment_GetType(self.handle)
+        })
+        .unwrap_or(PdfPathSegmentType::Unknown)
     }
 
     /// Returns `true` if this [PdfPathSegment] closes the current sub-path.
     #[inline]
     pub fn is_close(&self) -> bool {
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
         self.bindings()
-            .is_true(self.bindings().FPDFPathSegment_GetClose(self.handle()))
+            .is_true(unsafe { self.bindings().FPDFPathSegment_GetClose(self.handle()) })
     }
 
     /// Returns the horizontal and vertical destination positions of this [PdfPathSegment].
     pub fn point(&self) -> (PdfPoints, PdfPoints) {
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
         let mut x: c_float = 0.0;
 
         let mut y: c_float = 0.0;
 
-        if self
-            .bindings()
-            .is_true(
-                self.bindings()
-                    .FPDFPathSegment_GetPoint(self.handle(), &mut x, &mut y),
-            )
-        {
+        if self.bindings().is_true(unsafe {
+            self.bindings()
+                .FPDFPathSegment_GetPoint(self.handle(), &mut x, &mut y)
+        }) {
             let x = PdfPoints::new(x as f32);
 
             let y = PdfPoints::new(y as f32);
@@ -121,6 +120,14 @@ impl<'a> PdfPathSegment<'a> {
         self.point().1
     }
 }
+
+impl<'a> PdfiumLibraryBindingsAccessor<'a> for PdfPathSegment<'a> {}
+
+#[cfg(feature = "thread_safe")]
+unsafe impl<'a> Send for PdfPathSegment<'a> {}
+
+#[cfg(feature = "thread_safe")]
+unsafe impl<'a> Sync for PdfPathSegment<'a> {}
 
 #[cfg(test)]
 mod tests {

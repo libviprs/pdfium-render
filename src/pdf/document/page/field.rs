@@ -32,6 +32,7 @@ use crate::pdf::document::page::field::radio::PdfFormRadioButtonField;
 use crate::pdf::document::page::field::signature::PdfFormSignatureField;
 use crate::pdf::document::page::field::text::PdfFormTextField;
 use crate::pdf::document::page::field::unknown::PdfFormUnknownField;
+use crate::pdfium::PdfiumLibraryBindingsAccessor;
 use std::os::raw::c_int;
 
 #[cfg(doc)]
@@ -104,7 +105,10 @@ impl<'a> PdfFormField<'a> {
         annotation_handle: FPDF_ANNOTATION,
         bindings: &'a dyn PdfiumLibraryBindings,
     ) -> Option<Self> {
-        let result = bindings.FPDFAnnot_GetFormFieldType(form_handle, annotation_handle);
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        let result = unsafe { bindings.FPDFAnnot_GetFormFieldType(form_handle, annotation_handle) };
 
         if result == -1 {
             return None;
@@ -115,34 +119,31 @@ impl<'a> PdfFormField<'a> {
 
         Some(match form_field_type {
             PdfFormFieldType::PushButton => PdfFormField::PushButton(
-                PdfFormPushButtonField::from_pdfium(form_handle, annotation_handle, bindings),
+                PdfFormPushButtonField::from_pdfium(form_handle, annotation_handle),
             ),
             PdfFormFieldType::Checkbox => PdfFormField::Checkbox(
-                PdfFormCheckboxField::from_pdfium(form_handle, annotation_handle, bindings),
+                PdfFormCheckboxField::from_pdfium(form_handle, annotation_handle),
             ),
             PdfFormFieldType::RadioButton => PdfFormField::RadioButton(
-                PdfFormRadioButtonField::from_pdfium(form_handle, annotation_handle, bindings),
+                PdfFormRadioButtonField::from_pdfium(form_handle, annotation_handle),
             ),
             PdfFormFieldType::ComboBox => PdfFormField::ComboBox(
-                PdfFormComboBoxField::from_pdfium(form_handle, annotation_handle, bindings),
+                PdfFormComboBoxField::from_pdfium(form_handle, annotation_handle),
             ),
             PdfFormFieldType::ListBox => PdfFormField::ListBox(PdfFormListBoxField::from_pdfium(
                 form_handle,
                 annotation_handle,
-                bindings,
             )),
             PdfFormFieldType::Text => PdfFormField::Text(PdfFormTextField::from_pdfium(
                 form_handle,
                 annotation_handle,
-                bindings,
             )),
             PdfFormFieldType::Signature => PdfFormField::Signature(
-                PdfFormSignatureField::from_pdfium(form_handle, annotation_handle, bindings),
+                PdfFormSignatureField::from_pdfium(form_handle, annotation_handle),
             ),
             _ => PdfFormField::Unknown(PdfFormUnknownField::from_pdfium(
                 form_handle,
                 annotation_handle,
-                bindings,
             )),
         })
     }
@@ -305,7 +306,13 @@ pub trait PdfFormFieldCommon {
     /// to mouse clicks or change their appearance in response to mouse motions.
     fn is_read_only(&self) -> bool;
 
-    #[cfg(any(feature = "pdfium_future", feature = "pdfium_7350"))]
+    #[cfg(any(
+        feature = "pdfium_future",
+        feature = "pdfium_7881",
+        feature = "pdfium_7763",
+        feature = "pdfium_7543",
+        feature = "pdfium_7350"
+    ))]
     /// Controls whether or not the value of this [PdfFormField] is read only.
     fn set_is_read_only(&mut self, is_read_only: bool) -> Result<(), PdfiumError>;
 
@@ -316,7 +323,13 @@ pub trait PdfFormFieldCommon {
     /// The PDF Reference (Sixth Edition, PDF Format 1.7), starting on page 702.
     fn is_required(&self) -> bool;
 
-    #[cfg(any(feature = "pdfium_future", feature = "pdfium_7350"))]
+    #[cfg(any(
+        feature = "pdfium_future",
+        feature = "pdfium_7881",
+        feature = "pdfium_7763",
+        feature = "pdfium_7543",
+        feature = "pdfium_7350"
+    ))]
     /// Controls whether or not this [PdfFormField] must have a value at the time it is
     /// exported by any "submit form" action.
     ///
@@ -331,7 +344,13 @@ pub trait PdfFormFieldCommon {
     /// The PDF Reference (Sixth Edition, PDF Format 1.7), starting on page 702.
     fn is_exported_on_submit(&self) -> bool;
 
-    #[cfg(any(feature = "pdfium_future", feature = "pdfium_7350"))]
+    #[cfg(any(
+        feature = "pdfium_future",
+        feature = "pdfium_7881",
+        feature = "pdfium_7763",
+        feature = "pdfium_7543",
+        feature = "pdfium_7350"
+    ))]
     /// Controls whether or not the value of this [PdfFormField] will be exported by any
     /// "submit form" action.
     ///
@@ -366,7 +385,13 @@ where
         self.get_flags_impl().contains(PdfFormFieldFlags::ReadOnly)
     }
 
-    #[cfg(any(feature = "pdfium_future", feature = "pdfium_7350"))]
+    #[cfg(any(
+        feature = "pdfium_future",
+        feature = "pdfium_7881",
+        feature = "pdfium_7763",
+        feature = "pdfium_7543",
+        feature = "pdfium_7350"
+    ))]
     #[inline]
     fn set_is_read_only(&mut self, is_read_only: bool) -> Result<(), PdfiumError> {
         self.update_one_flag_impl(PdfFormFieldFlags::ReadOnly, is_read_only)
@@ -377,7 +402,13 @@ where
         self.get_flags_impl().contains(PdfFormFieldFlags::Required)
     }
 
-    #[cfg(any(feature = "pdfium_future", feature = "pdfium_7350"))]
+    #[cfg(any(
+        feature = "pdfium_future",
+        feature = "pdfium_7881",
+        feature = "pdfium_7763",
+        feature = "pdfium_7543",
+        feature = "pdfium_7350"
+    ))]
     #[inline]
     fn set_is_required(&mut self, is_required: bool) -> Result<(), PdfiumError> {
         self.update_one_flag_impl(PdfFormFieldFlags::Required, is_required)
@@ -388,7 +419,13 @@ where
         !self.get_flags_impl().contains(PdfFormFieldFlags::NoExport)
     }
 
-    #[cfg(any(feature = "pdfium_future", feature = "pdfium_7350"))]
+    #[cfg(any(
+        feature = "pdfium_future",
+        feature = "pdfium_7881",
+        feature = "pdfium_7763",
+        feature = "pdfium_7543",
+        feature = "pdfium_7350"
+    ))]
     #[inline]
     fn set_is_exported_on_submit(&mut self, is_exported: bool) -> Result<(), PdfiumError> {
         self.update_one_flag_impl(PdfFormFieldFlags::NoExport, !is_exported)
@@ -405,12 +442,15 @@ impl<'a> PdfFormFieldPrivate<'a> for PdfFormField<'a> {
     fn annotation_handle(&self) -> FPDF_ANNOTATION {
         self.unwrap_as_trait().annotation_handle()
     }
-
-    #[inline]
-    fn bindings(&self) -> &dyn PdfiumLibraryBindings {
-        self.unwrap_as_trait().bindings()
-    }
 }
+
+impl<'a> PdfiumLibraryBindingsAccessor<'a> for PdfFormField<'a> {}
+
+#[cfg(feature = "thread_safe")]
+unsafe impl<'a> Send for PdfFormField<'a> {}
+
+#[cfg(feature = "thread_safe")]
+unsafe impl<'a> Sync for PdfFormField<'a> {}
 
 impl<'a> From<PdfFormPushButtonField<'a>> for PdfFormField<'a> {
     #[inline]

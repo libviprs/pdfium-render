@@ -10,13 +10,15 @@ use crate::pdf::bitmap::PdfBitmap;
 use crate::pdf::bitmap::Pixels;
 use crate::pdf::color_space::PdfColorSpace;
 use crate::pdf::document::page::object::private::internal::PdfPageObjectPrivate;
-use crate::pdf::document::page::object::{PdfPageObject, PdfPageObjectOwnership};
+use crate::pdf::document::page::object::PdfPageObjectOwnership;
 use crate::pdf::document::PdfDocument;
 use crate::pdf::matrix::{PdfMatrix, PdfMatrixValue};
 use crate::pdf::points::PdfPoints;
+use crate::pdfium::PdfiumLibraryBindingsAccessor;
 use crate::utils::mem::create_byte_buffer;
 use crate::{create_transform_getters, create_transform_setters};
 use std::convert::TryInto;
+use std::marker::PhantomData;
 use std::ops::{Range, RangeInclusive};
 use std::os::raw::{c_int, c_void};
 
@@ -47,6 +49,7 @@ use image_023::{DynamicImage, EncodableLayout, GenericImageView, GrayImage, Rgba
 
 #[cfg(doc)]
 use {
+    crate::pdf::document::page::object::PdfPageObject,
     crate::pdf::document::page::object::PdfPageObjectType,
     crate::pdf::document::page::objects::common::PdfPageObjectsCommon,
     crate::pdf::document::page::PdfPage,
@@ -72,7 +75,7 @@ use {
 pub struct PdfPageImageObject<'a> {
     object_handle: FPDF_PAGEOBJECT,
     ownership: PdfPageObjectOwnership,
-    bindings: &'a dyn PdfiumLibraryBindings,
+    lifetime: PhantomData<&'a FPDF_PAGEOBJECT>,
 }
 
 impl<'a> PdfPageImageObject<'a> {
@@ -80,12 +83,11 @@ impl<'a> PdfPageImageObject<'a> {
     pub(crate) fn from_pdfium(
         object_handle: FPDF_PAGEOBJECT,
         ownership: PdfPageObjectOwnership,
-        bindings: &'a dyn PdfiumLibraryBindings,
     ) -> Self {
         PdfPageImageObject {
             object_handle,
             ownership,
-            bindings,
+            lifetime: PhantomData,
         }
     }
 
@@ -166,18 +168,23 @@ impl<'a> PdfPageImageObject<'a> {
         document: &PdfDocument<'a>,
         reader: R,
     ) -> Result<Self, PdfiumError> {
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
         let object = Self::new_from_handle(document.handle(), document.bindings())?;
 
         let mut reader = get_pdfium_file_accessor_from_reader(reader);
 
-        let result = document.bindings().FPDFImageObj_LoadJpegFileInline(
-            std::ptr::null_mut(),
-            0,
-            object.object_handle(),
-            reader.as_fpdf_file_access_mut_ptr(),
-        );
+        let result = unsafe {
+            document.bindings().FPDFImageObj_LoadJpegFileInline(
+                std::ptr::null_mut(),
+                0,
+                object.object_handle(),
+                reader.as_fpdf_file_access_mut_ptr(),
+            )
+        };
 
-        if object.bindings.is_true(result) {
+        if object.bindings().is_true(result) {
             Ok(object)
         } else {
             Err(PdfiumError::PdfiumLibraryInternalError(
@@ -192,7 +199,10 @@ impl<'a> PdfPageImageObject<'a> {
         document: FPDF_DOCUMENT,
         bindings: &'a dyn PdfiumLibraryBindings,
     ) -> Result<Self, PdfiumError> {
-        let handle = bindings.FPDFPageObj_NewImageObj(document);
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        let handle = unsafe { bindings.FPDFPageObj_NewImageObj(document) };
 
         if handle.is_null() {
             Err(PdfiumError::PdfiumLibraryInternalError(
@@ -202,7 +212,7 @@ impl<'a> PdfPageImageObject<'a> {
             Ok(PdfPageImageObject {
                 object_handle: handle,
                 ownership: PdfPageObjectOwnership::unowned(),
-                bindings,
+                lifetime: PhantomData,
             })
         }
     }
@@ -234,7 +244,7 @@ impl<'a> PdfPageImageObject<'a> {
     /// This function is only available when this crate's `image` feature is enabled.
     #[cfg(feature = "image_api")]
     pub fn new_with_height(
-        document: &PdfDocument<'a>,
+        document: &'a PdfDocument<'a>,
         image: &DynamicImage,
         height: PdfPoints,
     ) -> Result<Self, PdfiumError> {
@@ -269,10 +279,12 @@ impl<'a> PdfPageImageObject<'a> {
     /// this [PdfPageImageObject], ignoring any image filters, image mask, or object
     /// transforms applied to this page object.
     pub fn get_raw_bitmap(&self) -> Result<PdfBitmap<'_>, PdfiumError> {
-        Ok(PdfBitmap::from_pdfium(
-            self.bindings().FPDFImageObj_GetBitmap(self.object_handle()),
-            self.bindings(),
-        ))
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        Ok(PdfBitmap::from_pdfium(unsafe {
+            self.bindings().FPDFImageObj_GetBitmap(self.object_handle())
+        }))
     }
 
     /// Returns a new [DynamicImage] created from the bitmap buffer backing
@@ -426,6 +438,9 @@ impl<'a> PdfPageImageObject<'a> {
         width: Pixels,
         height: Pixels,
     ) -> Result<PdfBitmap<'_>, PdfiumError> {
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
         // We attempt to work around two separate problems in Pdfium's
         // FPDFImageObj_GetRenderedBitmap() function.
 
@@ -465,16 +480,20 @@ impl<'a> PdfPageImageObject<'a> {
         };
 
         let bitmap_handle = match page_handle {
-            Some(page_handle) => self.bindings().FPDFImageObj_GetRenderedBitmap(
-                document.handle(),
-                page_handle,
-                self.object_handle(),
-            ),
-            None => self.bindings.FPDFImageObj_GetRenderedBitmap(
-                document.handle(),
-                std::ptr::null_mut::<fpdf_page_t__>(),
-                self.object_handle(),
-            ),
+            Some(page_handle) => unsafe {
+                self.bindings().FPDFImageObj_GetRenderedBitmap(
+                    document.handle(),
+                    page_handle,
+                    self.object_handle(),
+                )
+            },
+            None => unsafe {
+                self.bindings().FPDFImageObj_GetRenderedBitmap(
+                    document.handle(),
+                    std::ptr::null_mut::<fpdf_page_t__>(),
+                    self.object_handle(),
+                )
+            },
         };
 
         if bitmap_handle.is_null() {
@@ -487,7 +506,7 @@ impl<'a> PdfPageImageObject<'a> {
             ));
         }
 
-        let result = PdfBitmap::from_pdfium(bitmap_handle, self.bindings());
+        let result = PdfBitmap::from_pdfium(bitmap_handle);
 
         if width == result.width() && height == result.height() {
             // The bitmap generated by Pdfium is already at the caller's requested dimensions.
@@ -512,21 +531,22 @@ impl<'a> PdfPageImageObject<'a> {
 
             // Generate the bitmap again at the new scale.
 
-            let result = PdfBitmap::from_pdfium(
-                match page_handle {
-                    Some(page_handle) => self.bindings().FPDFImageObj_GetRenderedBitmap(
+            let result = PdfBitmap::from_pdfium(match page_handle {
+                Some(page_handle) => unsafe {
+                    self.bindings().FPDFImageObj_GetRenderedBitmap(
                         document.handle(),
                         page_handle,
                         self.object_handle(),
-                    ),
-                    None => self.bindings.FPDFImageObj_GetRenderedBitmap(
+                    )
+                },
+                None => unsafe {
+                    self.bindings().FPDFImageObj_GetRenderedBitmap(
                         document.handle(),
                         std::ptr::null_mut::<fpdf_page_t__>(),
                         self.object_handle(),
-                    ),
+                    )
                 },
-                self.bindings,
-            );
+            });
 
             // Restore the original transformation matrix values before we return to the caller.
 
@@ -561,28 +581,32 @@ impl<'a> PdfPageImageObject<'a> {
         &self,
         bitmap: &PdfBitmap,
     ) -> Result<DynamicImage, PdfiumError> {
+        // Hold the FFI lock for the whole conversion: the buffer obtained below
+        // borrows Pdfium's internal bitmap memory, and it must not be mutated by
+        // another thread while we read from it.
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
         let handle = bitmap.handle();
-
-        let width = self.bindings.FPDFBitmap_GetWidth(handle);
-
-        let height = self.bindings.FPDFBitmap_GetHeight(handle);
-
-        let stride = self.bindings.FPDFBitmap_GetStride(handle);
-
+        let width = unsafe { self.bindings().FPDFBitmap_GetWidth(handle) };
+        let height = unsafe { self.bindings().FPDFBitmap_GetHeight(handle) };
+        let stride = unsafe { self.bindings().FPDFBitmap_GetStride(handle) };
         let format =
-            PdfBitmapFormat::from_pdfium(self.bindings.FPDFBitmap_GetFormat(handle) as u32)?;
+            PdfBitmapFormat::from_pdfium(
+                unsafe { self.bindings().FPDFBitmap_GetFormat(handle) } as u32
+            )?;
 
         #[cfg(not(target_arch = "wasm32"))]
-        let buffer = self.bindings.FPDFBitmap_GetBuffer_as_slice(handle);
+        let buffer = unsafe { self.bindings().FPDFBitmap_GetBuffer_as_slice(handle) };
 
         #[cfg(target_arch = "wasm32")]
-        let buffer_vec = self.bindings.FPDFBitmap_GetBuffer_as_vec(handle);
+        let buffer_vec = unsafe { self.bindings().FPDFBitmap_GetBuffer_as_vec(handle) };
         #[cfg(target_arch = "wasm32")]
         let buffer = buffer_vec.as_slice();
 
         match format {
             #[allow(deprecated)]
-            PdfBitmapFormat::BGRA | PdfBitmapFormat::BRGx | PdfBitmapFormat::BGRx => {
+            PdfBitmapFormat::BGRA | PdfBitmapFormat::BGRx => {
                 RgbaImage::from_raw(width as u32, height as u32, bgra_to_rgba(buffer))
                     .map(DynamicImage::ImageRgba8)
             }
@@ -607,11 +631,16 @@ impl<'a> PdfPageImageObject<'a> {
     ///
     /// The returned byte buffer may be empty if the image object does not contain any data.
     pub fn get_raw_image_data(&self) -> Result<Vec<u8>, PdfiumError> {
-        let buffer_length = self.bindings().FPDFImageObj_GetImageDataRaw(
-            self.object_handle(),
-            std::ptr::null_mut(),
-            0,
-        );
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        let buffer_length = unsafe {
+            self.bindings().FPDFImageObj_GetImageDataRaw(
+                self.object_handle(),
+                std::ptr::null_mut(),
+                0,
+            )
+        };
 
         if buffer_length == 0 {
             return Ok(Vec::new());
@@ -619,11 +648,13 @@ impl<'a> PdfPageImageObject<'a> {
 
         let mut buffer = create_byte_buffer(buffer_length as usize);
 
-        let result = self.bindings().FPDFImageObj_GetImageDataRaw(
-            self.object_handle(),
-            buffer.as_mut_ptr() as *mut c_void,
-            buffer_length,
-        );
+        let result = unsafe {
+            self.bindings().FPDFImageObj_GetImageDataRaw(
+                self.object_handle(),
+                buffer.as_mut_ptr() as *mut c_void,
+                buffer_length,
+            )
+        };
 
         assert_eq!(result, buffer_length);
 
@@ -674,6 +705,9 @@ impl<'a> PdfPageImageObject<'a> {
     /// This function is only available when this crate's `image` feature is enabled.
     #[cfg(feature = "image_api")]
     pub fn set_image(&mut self, image: &DynamicImage) -> Result<(), PdfiumError> {
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
         let width: Pixels = image
             .width()
             .try_into()
@@ -684,7 +718,7 @@ impl<'a> PdfPageImageObject<'a> {
             .try_into()
             .map_err(|_| PdfiumError::ImageSizeOutOfBounds)?;
 
-        let bitmap = PdfBitmap::empty(width, height, PdfBitmapFormat::BGRA, self.bindings)?;
+        let bitmap = PdfBitmap::empty(width, height, PdfBitmapFormat::BGRA)?;
 
         let buffer = if let Some(image) = image.as_rgba8() {
             // The given image is already in RGBA format.
@@ -698,10 +732,10 @@ impl<'a> PdfPageImageObject<'a> {
             rgba_to_bgra(image.as_bytes())
         };
 
-        if !self
-            .bindings
-            .FPDFBitmap_SetBuffer(bitmap.handle(), buffer.as_slice())
-        {
+        if !(unsafe {
+            self.bindings()
+                .FPDFBitmap_SetBuffer(bitmap.handle(), buffer.as_slice())
+        }) {
             return Err(PdfiumError::PdfiumLibraryInternalError(
                 PdfiumInternalError::Unknown,
             ));
@@ -712,15 +746,17 @@ impl<'a> PdfPageImageObject<'a> {
 
     /// Applies the byte data in the given [PdfBitmap] to this [PdfPageImageObject].
     pub fn set_bitmap(&mut self, bitmap: &PdfBitmap) -> Result<(), PdfiumError> {
-        if self
-            .bindings
-            .is_true(self.bindings().FPDFImageObj_SetBitmap(
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        if self.bindings().is_true(unsafe {
+            self.bindings().FPDFImageObj_SetBitmap(
                 std::ptr::null_mut::<FPDF_PAGE>(),
                 0,
                 self.object_handle(),
                 bitmap.handle(),
-            ))
-        {
+            )
+        }) {
             Ok(())
         } else {
             Err(PdfiumError::PdfiumLibraryInternalError(
@@ -731,6 +767,9 @@ impl<'a> PdfPageImageObject<'a> {
 
     /// Returns all internal metadata for this [PdfPageImageObject].
     pub(crate) fn get_raw_metadata(&self) -> Result<FPDF_IMAGEOBJ_METADATA, PdfiumError> {
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
         let mut metadata = FPDF_IMAGEOBJ_METADATA {
             width: 0,
             height: 0,
@@ -747,14 +786,16 @@ impl<'a> PdfPageImageObject<'a> {
             _ => None,
         };
 
-        let result = self.bindings().FPDFImageObj_GetImageMetadata(
-            self.object_handle(),
-            match page_handle {
-                Some(page_handle) => page_handle,
-                None => std::ptr::null_mut::<fpdf_page_t__>(),
-            },
-            &mut metadata,
-        );
+        let result = unsafe {
+            self.bindings().FPDFImageObj_GetImageMetadata(
+                self.object_handle(),
+                match page_handle {
+                    Some(page_handle) => page_handle,
+                    None => std::ptr::null_mut::<fpdf_page_t__>(),
+                },
+                &mut metadata,
+            )
+        };
 
         if self.bindings().is_true(result) {
             Ok(metadata)
@@ -843,39 +884,22 @@ impl<'a> PdfPageObjectPrivate<'a> for PdfPageImageObject<'a> {
     fn set_ownership(&mut self, ownership: PdfPageObjectOwnership) {
         self.ownership = ownership;
     }
+}
 
-    #[inline]
-    fn bindings(&self) -> &dyn PdfiumLibraryBindings {
-        self.bindings
-    }
-
-    #[inline]
-    fn is_copyable_impl(&self) -> bool {
-        // Image filters cannot be copied.
-
-        self.filters().is_empty()
-    }
-
-    #[inline]
-    fn try_copy_impl<'b>(
-        &self,
-        document: FPDF_DOCUMENT,
-        bindings: &'b dyn PdfiumLibraryBindings,
-    ) -> Result<PdfPageObject<'b>, PdfiumError> {
-        if !self.filters().is_empty() {
-            // Image filters cannot be copied.
-
-            return Err(PdfiumError::ImageObjectFiltersNotCopyable);
-        }
-
-        let mut copy = PdfPageImageObject::new_from_handle(document, bindings)?;
-
-        copy.set_bitmap(&self.get_raw_bitmap()?)?;
-        copy.reset_matrix(self.matrix()?)?;
-
-        Ok(PdfPageObject::Image(copy))
+impl<'a> Drop for PdfPageImageObject<'a> {
+    /// Closes this [PdfPageImageObject], releasing held memory.
+    fn drop(&mut self) {
+        self.drop_impl();
     }
 }
+
+impl<'a> PdfiumLibraryBindingsAccessor<'a> for PdfPageImageObject<'a> {}
+
+#[cfg(feature = "thread_safe")]
+unsafe impl<'a> Send for PdfPageImageObject<'a> {}
+
+#[cfg(feature = "thread_safe")]
+unsafe impl<'a> Sync for PdfPageImageObject<'a> {}
 
 /// The zero-based index of a single [PdfPageImageObjectFilter] inside its containing
 /// [PdfPageImageObjectFilters] collection.
@@ -894,9 +918,14 @@ impl<'a> PdfPageImageObjectFilters<'a> {
 
     /// Returns the number of image filters applied to the parent [PdfPageImageObject].
     pub fn len(&self) -> usize {
-        self.object
-            .bindings()
-            .FPDFImageObj_GetImageFilterCount(self.object.object_handle()) as usize
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        (unsafe {
+            self.object
+                .bindings()
+                .FPDFImageObj_GetImageFilterCount(self.object.object_handle())
+        }) as usize
     }
 
     /// Returns true if this [PdfPageImageObjectFilters] collection is empty.
@@ -926,6 +955,9 @@ impl<'a> PdfPageImageObjectFilters<'a> {
         &self,
         index: PdfPageImageObjectFilterIndex,
     ) -> Result<PdfPageImageObjectFilter, PdfiumError> {
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
         if index >= self.len() {
             return Err(PdfiumError::ImageObjectFilterIndexOutOfBounds);
         }
@@ -939,12 +971,14 @@ impl<'a> PdfPageImageObjectFilters<'a> {
         // this will write the font name into the buffer. Unlike most text handling in
         // Pdfium, image filter names are returned in UTF-8 format.
 
-        let buffer_length = self.object.bindings().FPDFImageObj_GetImageFilter(
-            self.object.object_handle(),
-            index as c_int,
-            std::ptr::null_mut(),
-            0,
-        );
+        let buffer_length = unsafe {
+            self.object.bindings().FPDFImageObj_GetImageFilter(
+                self.object.object_handle(),
+                index as c_int,
+                std::ptr::null_mut(),
+                0,
+            )
+        };
 
         if buffer_length == 0 {
             // The image filter name is not present.
@@ -954,12 +988,14 @@ impl<'a> PdfPageImageObjectFilters<'a> {
 
         let mut buffer = create_byte_buffer(buffer_length as usize);
 
-        let result = self.object.bindings().FPDFImageObj_GetImageFilter(
-            self.object.object_handle(),
-            index as c_int,
-            buffer.as_mut_ptr() as *mut c_void,
-            buffer_length,
-        );
+        let result = unsafe {
+            self.object.bindings().FPDFImageObj_GetImageFilter(
+                self.object.object_handle(),
+                index as c_int,
+                buffer.as_mut_ptr() as *mut c_void,
+                buffer_length,
+            )
+        };
 
         assert_eq!(result, buffer_length);
 
@@ -1044,7 +1080,7 @@ mod tests {
             .pages()
             .get(0)?
             .render_with_config(&PdfRenderConfig::new().set_target_width(1000))?
-            .as_image();
+            .as_image()?;
 
         let mut document = pdfium.create_new_pdf()?;
 
@@ -1157,12 +1193,5 @@ mod tests {
         );
 
         Ok(())
-    }
-}
-
-impl<'a> Drop for PdfPageImageObject<'a> {
-    /// Closes this [PdfPageImageObject], releasing held memory.
-    fn drop(&mut self) {
-        self.drop_impl();
     }
 }

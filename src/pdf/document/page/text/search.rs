@@ -2,10 +2,11 @@
 //! the collection of Unicode characters visible in a single [PdfPage].
 
 use crate::bindgen::{FPDF_MATCHCASE, FPDF_MATCHWHOLEWORD, FPDF_SCHHANDLE};
-use crate::bindings::PdfiumLibraryBindings;
 use crate::pdf::document::page::text::chars::PdfPageTextCharIndex;
 use crate::pdf::document::page::text::segments::PdfPageTextSegments;
 use crate::pdf::document::page::text::PdfPageText;
+use crate::pdfium::PdfiumLibraryBindingsAccessor;
+use std::marker::PhantomData;
 use std::os::raw::c_ulong;
 
 #[cfg(doc)]
@@ -76,19 +77,18 @@ pub enum PdfSearchDirection {
 pub struct PdfPageTextSearch<'a> {
     search_handle: FPDF_SCHHANDLE,
     text_page: &'a PdfPageText<'a>,
-    bindings: &'a dyn PdfiumLibraryBindings,
+    lifetime: PhantomData<&'a FPDF_SCHHANDLE>,
 }
 
 impl<'a> PdfPageTextSearch<'a> {
     pub(crate) fn from_pdfium(
         search_handle: FPDF_SCHHANDLE,
         text_page: &'a PdfPageText<'a>,
-        bindings: &'a dyn PdfiumLibraryBindings,
     ) -> Self {
         PdfPageTextSearch {
             search_handle,
             text_page,
-            bindings,
+            lifetime: PhantomData,
         }
     }
 
@@ -96,12 +96,6 @@ impl<'a> PdfPageTextSearch<'a> {
     #[inline]
     pub(crate) fn search_handle(&self) -> FPDF_SCHHANDLE {
         self.search_handle
-    }
-
-    /// Returns the [PdfiumLibraryBindings] used by this [PdfPageTextSearch] object.
-    #[inline]
-    pub fn bindings(&self) -> &'a dyn PdfiumLibraryBindings {
-        self.bindings
     }
 
     /// Returns the next search result yielded by this [PdfPageTextSearch] object
@@ -124,17 +118,21 @@ impl<'a> PdfPageTextSearch<'a> {
         &self,
         direction: PdfSearchDirection,
     ) -> Option<PdfPageTextSegments<'_>> {
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
         let has_next = if direction == PdfSearchDirection::SearchForward {
-            self.bindings().FPDFText_FindNext(self.search_handle()) != 0
+            (unsafe { self.bindings().FPDFText_FindNext(self.search_handle()) }) != 0
         } else {
-            self.bindings().FPDFText_FindPrev(self.search_handle()) != 0
+            (unsafe { self.bindings().FPDFText_FindPrev(self.search_handle()) }) != 0
         };
 
         if has_next {
-            let start_index = self
-                .bindings()
-                .FPDFText_GetSchResultIndex(self.search_handle());
-            let count = self.bindings().FPDFText_GetSchCount(self.search_handle());
+            let start_index = unsafe {
+                self.bindings()
+                    .FPDFText_GetSchResultIndex(self.search_handle())
+            };
+            let count = unsafe { self.bindings().FPDFText_GetSchCount(self.search_handle()) };
 
             Some(self.text_page.segments_subset(
                 start_index as PdfPageTextCharIndex,
@@ -157,9 +155,22 @@ impl<'a> Drop for PdfPageTextSearch<'a> {
     /// Closes this [PdfPageTextSearch] object, releasing held memory.
     #[inline]
     fn drop(&mut self) {
-        self.bindings().FPDFText_FindClose(self.search_handle());
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        unsafe {
+            self.bindings().FPDFText_FindClose(self.search_handle());
+        }
     }
 }
+
+impl<'a> PdfiumLibraryBindingsAccessor<'a> for PdfPageTextSearch<'a> {}
+
+#[cfg(feature = "thread_safe")]
+unsafe impl<'a> Send for PdfPageTextSearch<'a> {}
+
+#[cfg(feature = "thread_safe")]
+unsafe impl<'a> Sync for PdfPageTextSearch<'a> {}
 
 /// An iterator over all the [PdfPageTextSegments] search results yielded by a [PdfPageTextSearch] object.
 pub struct PdfPageTextSearchIterator<'a> {

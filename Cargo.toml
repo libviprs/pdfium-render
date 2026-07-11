@@ -1,6 +1,6 @@
 [package]
 name = "pdfium-render"
-version = "0.8.37"
+version = "0.9.3"
 edition = "2021"
 rust-version = "1.61"
 publish = true
@@ -35,8 +35,8 @@ utf16string = "0"
 vecmath = "1"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-console_log = "1"
 console_error_panic_hook = "0"
+console_log = "1"
 js-sys = "0"
 wasm-bindgen = { version = "0", features = ["enable-interning"] }
 wasm-bindgen-futures = "0"
@@ -65,20 +65,21 @@ rayon = "1"                                    # Used by examples/thread_safe.rs
 axum = "0"                                     # Used by examples/axum_once_cell.rs
 tokio = { version = "1", features = ["full"] } # Used by examples/axum_once_cell.rs
 tower = "0"                                    # Used by examples/axum_once_cell.rs
-pdfium-render = { path = "./", default-features = false, features = ["sync"] } # sync feature required by examples/axum_once_cell.rs
+pdfium-render = { path = "./", default-features = false, features = ["thread_safe"] } # thread_safe feature required by examples/axum_once_cell.rs
 
 [features]
-default = ["pdfium_latest", "thread_safe", "image"]
-image = ["image_latest"] # A synonym for backwards compatibility
+default = ["pdfium_latest", "image_latest", "thread_safe"]
 bindings = ["dep:bindgen"]
 static = []
 thread_safe = []
+sync = ["thread_safe"] # A synonym kept for downstream crates that select the older feature name
+image = ["image_latest"] # A synonym for backwards compatibility
 "libstdc++" = ["static"]
 "libc++" = ["static"]
 core_graphics = ["static"]
-sync = ["thread_safe"]
 paragraph = []
 flatten = []
+console_log = [] # A WASM-specific feature that initializes console_log-based logging to the browser console.
 
 # By default, pdfium-render uses the latest version of the image crate. To explicitly use
 # an older version, select one of the feature flags below when taking pdfium-render as
@@ -89,7 +90,7 @@ image_025 = ["dep:image_025", "image_api"]
 image_024 = ["dep:image_024", "image_api"]
 image_023 = ["dep:image_023", "image_api"]
 image_api = [] # A feature shared by all image versions, indicating that image-based APIs
-# should be available to callers
+# should be made available to callers
 
 # PdfiumLibraryBindings supports pinning its API definitions to a specific Pdfium release.
 # This allows pdfium-render consumers to safely upgrade their pdfium-render dependency without
@@ -99,13 +100,15 @@ image_api = [] # A feature shared by all image versions, indicating that image-b
 # To explicitly bind against an older version, select one of the feature flags below when
 # taking pdfium-render as a dependency in your project's Cargo.toml.
 
-pdfium_latest = ["pdfium_7543"]
+pdfium_latest = ["pdfium_7881"]
 pdfium_future = [
     # For testing changes in Pdfium source control that are yet to be released.
     "pdfium_use_skia",
     "pdfium_enable_xfa",
     "pdfium_enable_v8",
 ]
+pdfium_7881 = []
+pdfium_7763 = []
 pdfium_7543 = []
 pdfium_7350 = []
 pdfium_7215 = []

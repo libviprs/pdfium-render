@@ -1,20 +1,21 @@
 //! Defines the [PdfPageObject] enum, exposing functionality related to a single renderable page object.
 
-pub(crate) mod group;
-pub(crate) mod image;
-pub(crate) mod ownership;
-pub(crate) mod path;
+pub mod content_mark;
+pub mod group;
+pub mod image;
+pub mod ownership;
+pub mod path;
 pub(crate) mod private; // Keep private so that the PdfPageObjectPrivate trait is not exposed.
-pub(crate) mod shading;
-pub(crate) mod text;
-pub(crate) mod unsupported;
-pub(crate) mod x_object_form;
+pub mod shading;
+pub mod text;
+pub mod unsupported;
+pub mod x_object_form;
 
 use crate::bindgen::{
-    FPDF_DOCUMENT, FPDF_LINECAP_BUTT, FPDF_LINECAP_PROJECTING_SQUARE, FPDF_LINECAP_ROUND,
-    FPDF_LINEJOIN_BEVEL, FPDF_LINEJOIN_MITER, FPDF_LINEJOIN_ROUND, FPDF_PAGEOBJECT,
-    FPDF_PAGEOBJ_FORM, FPDF_PAGEOBJ_IMAGE, FPDF_PAGEOBJ_PATH, FPDF_PAGEOBJ_SHADING,
-    FPDF_PAGEOBJ_TEXT, FPDF_PAGEOBJ_UNKNOWN,
+    FPDF_LINECAP_BUTT, FPDF_LINECAP_PROJECTING_SQUARE, FPDF_LINECAP_ROUND, FPDF_LINEJOIN_BEVEL,
+    FPDF_LINEJOIN_MITER, FPDF_LINEJOIN_ROUND, FPDF_PAGEOBJECT, FPDF_PAGEOBJ_FORM,
+    FPDF_PAGEOBJ_IMAGE, FPDF_PAGEOBJ_PATH, FPDF_PAGEOBJ_SHADING, FPDF_PAGEOBJ_TEXT,
+    FPDF_PAGEOBJ_UNKNOWN,
 };
 use crate::bindings::PdfiumLibraryBindings;
 use crate::error::PdfiumError;
@@ -31,21 +32,29 @@ use crate::pdf::document::page::object::unsupported::PdfPageUnsupportedObject;
 use crate::pdf::document::page::object::x_object_form::PdfPageXObjectFormObject;
 use crate::pdf::document::page::objects::PdfPageObjects;
 use crate::pdf::document::page::{PdfPage, PdfPageObjectOwnership};
-use crate::pdf::document::PdfDocument;
 use crate::pdf::matrix::{PdfMatrix, PdfMatrixValue};
 use crate::pdf::path::clip_path::PdfClipPath;
 use crate::pdf::points::PdfPoints;
 use crate::pdf::quad_points::PdfQuadPoints;
 use crate::pdf::rect::PdfRect;
+use crate::pdfium::PdfiumLibraryBindingsAccessor;
 use crate::{create_transform_getters, create_transform_setters};
 use std::convert::TryInto;
 use std::os::raw::{c_int, c_uint};
 
-#[cfg(any(feature = "pdfium_future", feature = "pdfium_7350"))]
+#[cfg(any(
+    feature = "pdfium_future",
+    feature = "pdfium_7881",
+    feature = "pdfium_7763",
+    feature = "pdfium_7543",
+    feature = "pdfium_7350"
+))]
 use crate::pdf::document::page::objects::common::PdfPageObjectIndex;
 
 #[cfg(any(
     feature = "pdfium_future",
+    feature = "pdfium_7881",
+    feature = "pdfium_7763",
     feature = "pdfium_7543",
     feature = "pdfium_7350",
     feature = "pdfium_7215",
@@ -53,6 +62,9 @@ use crate::pdf::document::page::objects::common::PdfPageObjectIndex;
     feature = "pdfium_6996"
 ))]
 use crate::error::PdfiumInternalError;
+
+#[cfg(doc)]
+use crate::pdf::document::PdfDocument;
 
 /// The type of a single renderable [PdfPageObject].
 ///
@@ -327,32 +339,31 @@ impl<'a> PdfPageObject<'a> {
         ownership: PdfPageObjectOwnership,
         bindings: &'a dyn PdfiumLibraryBindings,
     ) -> Self {
-        match PdfPageObjectType::from_pdfium(bindings.FPDFPageObj_GetType(object_handle) as u32)
-            .unwrap_or(PdfPageObjectType::Unsupported)
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        match PdfPageObjectType::from_pdfium(
+            unsafe { bindings.FPDFPageObj_GetType(object_handle) } as u32
+        )
+        .unwrap_or(PdfPageObjectType::Unsupported)
         {
             PdfPageObjectType::Unsupported => PdfPageObject::Unsupported(
-                PdfPageUnsupportedObject::from_pdfium(object_handle, ownership, bindings),
+                PdfPageUnsupportedObject::from_pdfium(object_handle, ownership),
             ),
-            PdfPageObjectType::Text => PdfPageObject::Text(PdfPageTextObject::from_pdfium(
-                object_handle,
-                ownership,
-                bindings,
-            )),
-            PdfPageObjectType::Path => PdfPageObject::Path(PdfPagePathObject::from_pdfium(
-                object_handle,
-                ownership,
-                bindings,
-            )),
-            PdfPageObjectType::Image => PdfPageObject::Image(PdfPageImageObject::from_pdfium(
-                object_handle,
-                ownership,
-                bindings,
-            )),
-            PdfPageObjectType::Shading => PdfPageObject::Shading(
-                PdfPageShadingObject::from_pdfium(object_handle, ownership, bindings),
-            ),
+            PdfPageObjectType::Text => {
+                PdfPageObject::Text(PdfPageTextObject::from_pdfium(object_handle, ownership))
+            }
+            PdfPageObjectType::Path => {
+                PdfPageObject::Path(PdfPagePathObject::from_pdfium(object_handle, ownership))
+            }
+            PdfPageObjectType::Image => {
+                PdfPageObject::Image(PdfPageImageObject::from_pdfium(object_handle, ownership))
+            }
+            PdfPageObjectType::Shading => {
+                PdfPageObject::Shading(PdfPageShadingObject::from_pdfium(object_handle, ownership))
+            }
             PdfPageObjectType::XObjectForm => PdfPageObject::XObjectForm(
-                PdfPageXObjectFormObject::from_pdfium(object_handle, ownership, bindings),
+                PdfPageXObjectFormObject::from_pdfium(object_handle, ownership),
             ),
         }
     }
@@ -521,9 +532,13 @@ impl<'a> PdfPageObject<'a> {
 
     /// Returns the clip path for this object, if any.
     pub fn get_clip_path(&self) -> Option<PdfClipPath<'_>> {
-        let path_handle = self
-            .bindings()
-            .FPDFPageObj_GetClipPath(self.object_handle());
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        let path_handle = unsafe {
+            self.bindings()
+                .FPDFPageObj_GetClipPath(self.object_handle())
+        };
 
         if path_handle.is_null() {
             return None;
@@ -532,12 +547,13 @@ impl<'a> PdfPageObject<'a> {
         return Some(PdfClipPath::from_pdfium(
             path_handle,
             self.ownership().clone(),
-            self.bindings(),
         ));
     }
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_7881",
+        feature = "pdfium_7763",
         feature = "pdfium_7543",
         feature = "pdfium_7350",
         feature = "pdfium_7215",
@@ -547,10 +563,13 @@ impl<'a> PdfPageObject<'a> {
     /// Marks this [PdfPageObject] as active on its containing page. All page objects
     /// start in the active state by default.
     pub fn set_active(&mut self) -> Result<(), PdfiumError> {
-        if self.bindings().is_true(
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        if self.bindings().is_true(unsafe {
             self.bindings()
-                .FPDFPageObj_SetIsActive(self.object_handle(), self.bindings().TRUE()),
-        ) {
+                .FPDFPageObj_SetIsActive(self.object_handle(), self.bindings().TRUE())
+        }) {
             Ok(())
         } else {
             Err(PdfiumError::PdfiumLibraryInternalError(
@@ -561,6 +580,8 @@ impl<'a> PdfPageObject<'a> {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_7881",
+        feature = "pdfium_7763",
         feature = "pdfium_7543",
         feature = "pdfium_7350",
         feature = "pdfium_7215",
@@ -569,12 +590,15 @@ impl<'a> PdfPageObject<'a> {
     ))]
     /// Returns `true` if this [PdfPageObject] is marked as active on its containing page.
     pub fn is_active(&self) -> Result<bool, PdfiumError> {
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
         let mut result = self.bindings().FALSE();
 
-        if self.bindings().is_true(
+        if self.bindings().is_true(unsafe {
             self.bindings()
-                .FPDFPageObj_GetIsActive(self.object_handle(), &mut result),
-        ) {
+                .FPDFPageObj_GetIsActive(self.object_handle(), &mut result)
+        }) {
             Ok(self.bindings().is_true(result))
         } else {
             Err(PdfiumError::PdfiumLibraryInternalError(
@@ -585,6 +609,8 @@ impl<'a> PdfPageObject<'a> {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_7881",
+        feature = "pdfium_7763",
         feature = "pdfium_7543",
         feature = "pdfium_7350",
         feature = "pdfium_7215",
@@ -594,10 +620,13 @@ impl<'a> PdfPageObject<'a> {
     /// Marks this [PdfPageObject] as inactive on its containing page. The page object will
     /// be treated as if it were not in the document, even though it exists internally.
     pub fn set_inactive(&mut self) -> Result<(), PdfiumError> {
-        if self.bindings().is_true(
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        if self.bindings().is_true(unsafe {
             self.bindings()
-                .FPDFPageObj_SetIsActive(self.object_handle(), self.bindings().FALSE()),
-        ) {
+                .FPDFPageObj_SetIsActive(self.object_handle(), self.bindings().FALSE())
+        }) {
             Ok(())
         } else {
             Err(PdfiumError::PdfiumLibraryInternalError(
@@ -608,6 +637,8 @@ impl<'a> PdfPageObject<'a> {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_7881",
+        feature = "pdfium_7763",
         feature = "pdfium_7543",
         feature = "pdfium_7350",
         feature = "pdfium_7215",
@@ -640,6 +671,14 @@ impl<'a> PdfPageObject<'a> {
     // The get_matrix_impl() function required by the create_transform_getters!() macro
     // is provided by the PdfPageObjectPrivate trait.
 }
+
+impl<'a> PdfiumLibraryBindingsAccessor<'a> for PdfPageObject<'a> {}
+
+#[cfg(feature = "thread_safe")]
+unsafe impl<'a> Send for PdfPageObject<'a> {}
+
+#[cfg(feature = "thread_safe")]
+unsafe impl<'a> Sync for PdfPageObject<'a> {}
 
 /// Functionality common to all [PdfPageObject] objects, regardless of their [PdfPageObjectType].
 pub trait PdfPageObjectCommon<'a> {
@@ -807,58 +846,6 @@ pub trait PdfPageObjectCommon<'a> {
     /// dash patterns, but will not save dash patterns to PDF files.
     fn set_dash_array(&mut self, array: &[PdfPoints], phase: PdfPoints) -> Result<(), PdfiumError>;
 
-    #[deprecated(
-        since = "0.8.32",
-        note = "This function has been retired in favour of the PdfPageObject::copy_to_page() function."
-    )]
-    /// Returns `true` if this [PdfPageObject] can be successfully copied by calling its
-    /// `try_copy()` function.
-    ///
-    /// Not all page objects can be successfully copied. The following restrictions apply:
-    ///
-    /// * For path objects, it is not possible to copy a path object that contains a Bézier path
-    ///   segment, because Pdfium does not currently provide any way to retrieve the control points of a
-    ///   Bézier curve of an existing path object.
-    /// * For text objects, the font used by the object must be present in the destination document,
-    ///   or text rendering behaviour will be unpredictable. While text objects refer to fonts,
-    ///   font data is embedded into documents separately from text objects.
-    /// * For image objects, Pdfium allows iterating over the list of image filters applied
-    ///   to an image object, but currently provides no way to set a new object's image filters.
-    ///   As a result, it is not possible to copy an image object that has any image filters applied.
-    ///
-    /// Pdfium currently allows setting the blend mode for a page object, but provides no way
-    /// to retrieve an object's current blend mode. As a result, the blend mode setting of the
-    /// original object will not be transferred to the copy.
-    fn is_copyable(&self) -> bool;
-
-    #[deprecated(
-        since = "0.8.32",
-        note = "This function has been retired in favour of the PdfPageObject::copy_to_page() function."
-    )]
-    /// Attempts to copy this [PdfPageObject] by creating a new page object and copying across
-    /// all the properties of this [PdfPageObject] to the new page object.
-    ///
-    /// Not all page objects can be successfully copied. The following restrictions apply:
-    ///
-    /// * For path objects, it is not possible to copy a path object that contains a Bézier path
-    ///   segment, because Pdfium does not currently provide any way to retrieve the control points of a
-    ///   Bézier curve of an existing path object.
-    /// * For text objects, the font used by the object must be present in the destination document,
-    ///   or text rendering behaviour will be unpredictable. While text objects refer to fonts,
-    ///   font data is embedded into documents separately from text objects.
-    /// * For image objects, Pdfium allows iterating over the list of image filters applied
-    ///   to an image object, but currently provides no way to set a new object's image filters.
-    ///   As a result, it is not possible to copy an image object that has any image filters applied.
-    ///
-    /// Pdfium currently allows setting the blend mode for a page object, but provides no way
-    /// to retrieve an object's current blend mode. As a result, the blend mode setting of the
-    /// original object will not be transferred to the copy.
-    ///
-    /// The returned page object will be detached from any existing [PdfPage]. Its lifetime
-    /// will be bound to the lifetime of the given destination [PdfDocument].
-    fn try_copy<'b>(&self, document: &'b PdfDocument<'b>)
-        -> Result<PdfPageObject<'b>, PdfiumError>;
-
     /// Copies this [PdfPageObject] object into a new [PdfPageXObjectFormObject], then adds
     /// the new form object to the page objects collection of the given [PdfPage],
     /// returning the new form object.
@@ -908,32 +895,36 @@ where
 
     #[inline]
     fn set_blend_mode(&mut self, blend_mode: PdfPageObjectBlendMode) -> Result<(), PdfiumError> {
-        self.bindings()
-            .FPDFPageObj_SetBlendMode(self.object_handle(), blend_mode.as_pdfium());
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        unsafe {
+            self.bindings()
+                .FPDFPageObj_SetBlendMode(self.object_handle(), blend_mode.as_pdfium());
+        }
 
         Ok(())
     }
 
     #[inline]
     fn fill_color(&self) -> Result<PdfColor, PdfiumError> {
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
         let mut r = 0;
-
         let mut g = 0;
-
         let mut b = 0;
-
         let mut a = 0;
 
-        if self
-            .bindings()
-            .is_true(self.bindings().FPDFPageObj_GetFillColor(
+        if self.bindings().is_true(unsafe {
+            self.bindings().FPDFPageObj_GetFillColor(
                 self.object_handle(),
                 &mut r,
                 &mut g,
                 &mut b,
                 &mut a,
-            ))
-        {
+            )
+        }) {
             Ok(PdfColor::new(
                 r.try_into()
                     .map_err(PdfiumError::UnableToConvertPdfiumColorValueToRustu8)?,
@@ -951,16 +942,18 @@ where
 
     #[inline]
     fn set_fill_color(&mut self, fill_color: PdfColor) -> Result<(), PdfiumError> {
-        if self
-            .bindings()
-            .is_true(self.bindings().FPDFPageObj_SetFillColor(
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        if self.bindings().is_true(unsafe {
+            self.bindings().FPDFPageObj_SetFillColor(
                 self.object_handle(),
                 fill_color.red() as c_uint,
                 fill_color.green() as c_uint,
                 fill_color.blue() as c_uint,
                 fill_color.alpha() as c_uint,
-            ))
-        {
+            )
+        }) {
             Ok(())
         } else {
             Err(PdfiumError::PdfiumFunctionReturnValueIndicatedFailure)
@@ -969,24 +962,23 @@ where
 
     #[inline]
     fn stroke_color(&self) -> Result<PdfColor, PdfiumError> {
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
         let mut r = 0;
-
         let mut g = 0;
-
         let mut b = 0;
-
         let mut a = 0;
 
-        if self
-            .bindings()
-            .is_true(self.bindings().FPDFPageObj_GetStrokeColor(
+        if self.bindings().is_true(unsafe {
+            self.bindings().FPDFPageObj_GetStrokeColor(
                 self.object_handle(),
                 &mut r,
                 &mut g,
                 &mut b,
                 &mut a,
-            ))
-        {
+            )
+        }) {
             Ok(PdfColor::new(
                 r.try_into()
                     .map_err(PdfiumError::UnableToConvertPdfiumColorValueToRustu8)?,
@@ -1004,16 +996,18 @@ where
 
     #[inline]
     fn set_stroke_color(&mut self, stroke_color: PdfColor) -> Result<(), PdfiumError> {
-        if self
-            .bindings()
-            .is_true(self.bindings().FPDFPageObj_SetStrokeColor(
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        if self.bindings().is_true(unsafe {
+            self.bindings().FPDFPageObj_SetStrokeColor(
                 self.object_handle(),
                 stroke_color.red() as c_uint,
                 stroke_color.green() as c_uint,
                 stroke_color.blue() as c_uint,
                 stroke_color.alpha() as c_uint,
-            ))
-        {
+            )
+        }) {
             Ok(())
         } else {
             Err(PdfiumError::PdfiumFunctionReturnValueIndicatedFailure)
@@ -1022,12 +1016,15 @@ where
 
     #[inline]
     fn stroke_width(&self) -> Result<PdfPoints, PdfiumError> {
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
         let mut width = 0.0;
 
-        if self.bindings().is_true(
+        if self.bindings().is_true(unsafe {
             self.bindings()
-                .FPDFPageObj_GetStrokeWidth(self.object_handle(), &mut width),
-        ) {
+                .FPDFPageObj_GetStrokeWidth(self.object_handle(), &mut width)
+        }) {
             Ok(PdfPoints::new(width))
         } else {
             Err(PdfiumError::PdfiumFunctionReturnValueIndicatedFailure)
@@ -1036,10 +1033,13 @@ where
 
     #[inline]
     fn set_stroke_width(&mut self, stroke_width: PdfPoints) -> Result<(), PdfiumError> {
-        if self.bindings().is_true(
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        if self.bindings().is_true(unsafe {
             self.bindings()
-                .FPDFPageObj_SetStrokeWidth(self.object_handle(), stroke_width.value),
-        ) {
+                .FPDFPageObj_SetStrokeWidth(self.object_handle(), stroke_width.value)
+        }) {
             Ok(())
         } else {
             Err(PdfiumError::PdfiumFunctionReturnValueIndicatedFailure)
@@ -1048,19 +1048,25 @@ where
 
     #[inline]
     fn line_join(&self) -> Result<PdfPageObjectLineJoin, PdfiumError> {
-        PdfPageObjectLineJoin::from_pdfium(
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        PdfPageObjectLineJoin::from_pdfium(unsafe {
             self.bindings()
-                .FPDFPageObj_GetLineJoin(self.object_handle()),
-        )
+                .FPDFPageObj_GetLineJoin(self.object_handle())
+        })
         .ok_or(PdfiumError::PdfiumFunctionReturnValueIndicatedFailure)
     }
 
     #[inline]
     fn set_line_join(&mut self, line_join: PdfPageObjectLineJoin) -> Result<(), PdfiumError> {
-        if self.bindings().is_true(
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        if self.bindings().is_true(unsafe {
             self.bindings()
-                .FPDFPageObj_SetLineJoin(self.object_handle(), line_join.as_pdfium() as c_int),
-        ) {
+                .FPDFPageObj_SetLineJoin(self.object_handle(), line_join.as_pdfium() as c_int)
+        }) {
             Ok(())
         } else {
             Err(PdfiumError::PdfiumFunctionReturnValueIndicatedFailure)
@@ -1069,18 +1075,24 @@ where
 
     #[inline]
     fn line_cap(&self) -> Result<PdfPageObjectLineCap, PdfiumError> {
-        PdfPageObjectLineCap::from_pdfium(
-            self.bindings().FPDFPageObj_GetLineCap(self.object_handle()),
-        )
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        PdfPageObjectLineCap::from_pdfium(unsafe {
+            self.bindings().FPDFPageObj_GetLineCap(self.object_handle())
+        })
         .ok_or(PdfiumError::PdfiumFunctionReturnValueIndicatedFailure)
     }
 
     #[inline]
     fn set_line_cap(&mut self, line_cap: PdfPageObjectLineCap) -> Result<(), PdfiumError> {
-        if self.bindings().is_true(
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        if self.bindings().is_true(unsafe {
             self.bindings()
-                .FPDFPageObj_SetLineCap(self.object_handle(), line_cap.as_pdfium() as c_int),
-        ) {
+                .FPDFPageObj_SetLineCap(self.object_handle(), line_cap.as_pdfium() as c_int)
+        }) {
             Ok(())
         } else {
             Err(PdfiumError::PdfiumFunctionReturnValueIndicatedFailure)
@@ -1089,12 +1101,15 @@ where
 
     #[inline]
     fn dash_phase(&self) -> Result<PdfPoints, PdfiumError> {
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
         let mut phase = 0.0;
 
-        if self.bindings().is_true(
+        if self.bindings().is_true(unsafe {
             self.bindings()
-                .FPDFPageObj_GetDashPhase(self.object_handle(), &mut phase),
-        ) {
+                .FPDFPageObj_GetDashPhase(self.object_handle(), &mut phase)
+        }) {
             Ok(PdfPoints::new(phase))
         } else {
             Err(PdfiumError::PdfiumFunctionReturnValueIndicatedFailure)
@@ -1103,10 +1118,13 @@ where
 
     #[inline]
     fn set_dash_phase(&mut self, dash_phase: PdfPoints) -> Result<(), PdfiumError> {
-        if self.bindings().is_true(
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        if self.bindings().is_true(unsafe {
             self.bindings()
-                .FPDFPageObj_SetDashPhase(self.object_handle(), dash_phase.value),
-        ) {
+                .FPDFPageObj_SetDashPhase(self.object_handle(), dash_phase.value)
+        }) {
             Ok(())
         } else {
             Err(PdfiumError::PdfiumFunctionReturnValueIndicatedFailure)
@@ -1115,20 +1133,23 @@ where
 
     #[inline]
     fn dash_array(&self) -> Result<Vec<PdfPoints>, PdfiumError> {
-        let dash_count = self
-            .bindings()
-            .FPDFPageObj_GetDashCount(self.object_handle()) as usize;
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        let dash_count = unsafe {
+            self.bindings()
+                .FPDFPageObj_GetDashCount(self.object_handle())
+        } as usize;
 
         let mut dash_array = vec![0.0; dash_count];
 
-        if self
-            .bindings()
-            .is_true(self.bindings().FPDFPageObj_GetDashArray(
+        if self.bindings().is_true(unsafe {
+            self.bindings().FPDFPageObj_GetDashArray(
                 self.object_handle(),
                 dash_array.as_mut_ptr(),
                 dash_count,
-            ))
-        {
+            )
+        }) {
             Ok(dash_array
                 .iter()
                 .map(|dash| PdfPoints::new(*dash))
@@ -1139,34 +1160,23 @@ where
     }
 
     fn set_dash_array(&mut self, array: &[PdfPoints], phase: PdfPoints) -> Result<(), PdfiumError> {
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
         let dash_array = array.iter().map(|dash| dash.value).collect::<Vec<_>>();
 
-        if self
-            .bindings()
-            .is_true(self.bindings().FPDFPageObj_SetDashArray(
+        if self.bindings().is_true(unsafe {
+            self.bindings().FPDFPageObj_SetDashArray(
                 self.object_handle(),
                 dash_array.as_ptr(),
                 dash_array.len(),
                 phase.value,
-            ))
-        {
+            )
+        }) {
             Ok(())
         } else {
             Err(PdfiumError::PdfiumFunctionReturnValueIndicatedFailure)
         }
-    }
-
-    #[inline]
-    fn is_copyable(&self) -> bool {
-        self.is_copyable_impl()
-    }
-
-    #[inline]
-    fn try_copy<'b>(
-        &self,
-        document: &'b PdfDocument<'b>,
-    ) -> Result<PdfPageObject<'b>, PdfiumError> {
-        self.try_copy_impl(document.handle(), document.bindings())
     }
 
     #[inline]
@@ -1233,11 +1243,6 @@ where
 
 impl<'a> PdfPageObjectPrivate<'a> for PdfPageObject<'a> {
     #[inline]
-    fn bindings(&self) -> &dyn PdfiumLibraryBindings {
-        self.unwrap_as_trait().bindings()
-    }
-
-    #[inline]
     fn object_handle(&self) -> FPDF_PAGEOBJECT {
         self.unwrap_as_trait().object_handle()
     }
@@ -1257,7 +1262,13 @@ impl<'a> PdfPageObjectPrivate<'a> for PdfPageObject<'a> {
         self.unwrap_as_trait_mut().add_object_to_page(page_objects)
     }
 
-    #[cfg(any(feature = "pdfium_future", feature = "pdfium_7350"))]
+    #[cfg(any(
+        feature = "pdfium_future",
+        feature = "pdfium_7881",
+        feature = "pdfium_7763",
+        feature = "pdfium_7543",
+        feature = "pdfium_7350"
+    ))]
     #[inline]
     fn insert_object_on_page(
         &mut self,
@@ -1285,20 +1296,6 @@ impl<'a> PdfPageObjectPrivate<'a> for PdfPageObject<'a> {
     #[inline]
     fn remove_object_from_annotation(&mut self) -> Result<(), PdfiumError> {
         self.unwrap_as_trait_mut().remove_object_from_annotation()
-    }
-
-    #[inline]
-    fn is_copyable_impl(&self) -> bool {
-        self.unwrap_as_trait().is_copyable_impl()
-    }
-
-    #[inline]
-    fn try_copy_impl<'b>(
-        &self,
-        document: FPDF_DOCUMENT,
-        bindings: &'b dyn PdfiumLibraryBindings,
-    ) -> Result<PdfPageObject<'b>, PdfiumError> {
-        self.unwrap_as_trait().try_copy_impl(document, bindings)
     }
 
     #[inline]
@@ -1356,6 +1353,9 @@ impl<'a> Drop for PdfPageObject<'a> {
     /// Closes this [PdfPageObject], releasing held memory.
     #[inline]
     fn drop(&mut self) {
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
         // The documentation for FPDFPageObj_Destroy() states that we only need
         // call the function for page objects created by FPDFPageObj_CreateNew*() or
         // FPDFPageObj_New*Obj() _and_ where the newly-created object was _not_ subsequently
@@ -1367,7 +1367,9 @@ impl<'a> Drop for PdfPageObject<'a> {
         // (Indeed, if we try to, Pdfium segfaults.)
 
         if !self.ownership().is_owned() {
-            self.bindings().FPDFPageObj_Destroy(self.object_handle());
+            unsafe {
+                self.bindings().FPDFPageObj_Destroy(self.object_handle());
+            }
         }
     }
 }

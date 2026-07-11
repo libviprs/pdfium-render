@@ -1,17 +1,20 @@
 //! Defines the [PdfBookmarks] struct, exposing functionality related to the
-//! bookmarks contained within a single `PdfDocument`.
+//! bookmarks contained within a single [PdfDocument].
 
 use crate::bindgen::{FPDF_BOOKMARK, FPDF_DOCUMENT};
-use crate::bindings::PdfiumLibraryBindings;
 use crate::error::{PdfiumError, PdfiumInternalError};
 use crate::pdf::document::bookmark::PdfBookmark;
+use crate::pdfium::PdfiumLibraryBindingsAccessor;
 use std::collections::HashSet;
-use std::ptr::null_mut;
+use std::marker::PhantomData;
 
-/// The bookmarks contained within a single `PdfDocument`.
+#[cfg(doc)]
+use crate::pdf::document::PdfDocument;
+
+/// The bookmarks contained within a single [PdfDocument].
 ///
 /// Bookmarks in PDF files form a tree structure, branching out from a top-level root bookmark.
-/// The [PdfBookmarks::root()] returns the root bookmark in the containing `PdfDocument`, if any;
+/// The [PdfBookmarks::root()] returns the root bookmark in the containing [PdfDocument], if any;
 /// use the root's [PdfBookmark::first_child()] and [PdfBookmark::next_sibling()] functions to
 /// traverse the bookmark tree.
 ///
@@ -20,39 +23,34 @@ use std::ptr::null_mut;
 /// every bookmark in the tree, create an iterator using the [PdfBookmarks::iter()] function.
 pub struct PdfBookmarks<'a> {
     document_handle: FPDF_DOCUMENT,
-    bindings: &'a dyn PdfiumLibraryBindings,
+    lifetime: PhantomData<&'a FPDF_DOCUMENT>,
 }
 
 impl<'a> PdfBookmarks<'a> {
     #[inline]
-    pub(crate) fn from_pdfium(
-        document_handle: FPDF_DOCUMENT,
-        bindings: &'a dyn PdfiumLibraryBindings,
-    ) -> Self {
+    pub(crate) fn from_pdfium(document_handle: FPDF_DOCUMENT) -> Self {
         Self {
             document_handle,
-            bindings,
+            lifetime: PhantomData,
         }
     }
 
-    /// Returns the internal `FPDF_DOCUMENT` handle of the `PdfDocument` containing
+    /// Returns the internal `FPDF_DOCUMENT` handle of the [PdfDocument] containing
     /// this [PdfBookmarks] collection.
     #[inline]
     pub(crate) fn document_handle(&self) -> FPDF_DOCUMENT {
         self.document_handle
     }
 
-    /// Returns the [PdfiumLibraryBindings] used by this [PdfBookmarks] collection.
-    #[inline]
-    pub fn bindings(&self) -> &'a dyn PdfiumLibraryBindings {
-        self.bindings
-    }
-
-    /// Returns the root [PdfBookmark] in the containing `PdfDocument`, if any.
+    /// Returns the root [PdfBookmark] in the containing [PdfDocument], if any.
     pub fn root(&self) -> Option<PdfBookmark<'_>> {
-        let bookmark_handle = self
-            .bindings
-            .FPDFBookmark_GetFirstChild(self.document_handle, null_mut());
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        let bookmark_handle = unsafe {
+            self.bindings()
+                .FPDFBookmark_GetFirstChild(self.document_handle, std::ptr::null_mut())
+        };
 
         if bookmark_handle.is_null() {
             None
@@ -61,37 +59,35 @@ impl<'a> PdfBookmarks<'a> {
                 bookmark_handle,
                 None,
                 self.document_handle,
-                self.bindings,
             ))
         }
     }
 
-    /// Returns the first [PdfBookmark] in the containing `PdfDocument` that has a title matching
+    /// Returns the first [PdfBookmark] in the containing [PdfDocument] that has a title matching
     /// the given string.
     ///
     /// Note that bookmarks are not required to have unique titles, so in theory any number of
     /// bookmarks could match a given title. This function only ever returns the first. To return
     /// all matches, use [PdfBookmarks::find_all_by_title()].
     pub fn find_first_by_title(&self, title: &str) -> Result<PdfBookmark<'_>, PdfiumError> {
-        let handle = self
-            .bindings
-            .FPDFBookmark_Find_str(self.document_handle, title);
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        let handle = unsafe {
+            self.bindings()
+                .FPDFBookmark_Find_str(self.document_handle, title)
+        };
 
         if handle.is_null() {
             Err(PdfiumError::PdfiumLibraryInternalError(
                 PdfiumInternalError::Unknown,
             ))
         } else {
-            Ok(PdfBookmark::from_pdfium(
-                handle,
-                None,
-                self.document_handle,
-                self.bindings,
-            ))
+            Ok(PdfBookmark::from_pdfium(handle, None, self.document_handle))
         }
     }
 
-    /// Returns all [PdfBookmark] objects in the containing `PdfDocument` that have a title
+    /// Returns all [PdfBookmark] objects in the containing [PdfDocument] that have a title
     /// matching the given string.
     ///
     /// Note that bookmarks are not required to have unique titles, so in theory any number of
@@ -108,35 +104,42 @@ impl<'a> PdfBookmarks<'a> {
     }
 
     /// Returns a depth-first prefix-order iterator over all the [PdfBookmark]
-    /// objects in the containing `PdfDocument`, starting from the top-level
+    /// objects in the containing [PdfDocument], starting from the top-level
     /// root bookmark.
     #[inline]
     pub fn iter(&self) -> PdfBookmarksIterator<'_> {
-        PdfBookmarksIterator::new(
-            self.root(),
-            true,
-            None,
-            self.document_handle(),
-            self.bindings(),
-        )
+        PdfBookmarksIterator::new(self.root(), true, None, self.document_handle())
     }
 }
 
+impl<'a> PdfiumLibraryBindingsAccessor<'a> for PdfBookmarks<'a> {}
+
+#[cfg(feature = "thread_safe")]
+unsafe impl<'a> Send for PdfBookmarks<'a> {}
+
+#[cfg(feature = "thread_safe")]
+unsafe impl<'a> Sync for PdfBookmarks<'a> {}
+
 /// An iterator over all the [PdfBookmark] objects in a [PdfBookmarks] collection.
 pub struct PdfBookmarksIterator<'a> {
+    document_handle: FPDF_DOCUMENT,
+
     // If true, recurse into descendants.
     include_descendants: bool,
-    // Stack of pairs of (Bookmark Node, Node's Parent). The parent may be NULL
-    // if its a root node or the parent is unknown.
+
+    // A stack of pairs of (Bookmark Node, Node's Parent). The parent may be NULL
+    // if it is a root node, or if the parent is unknown.
     pending_stack: Vec<(FPDF_BOOKMARK, FPDF_BOOKMARK)>,
-    // Set of nodes already visitied. This ensures we terminate if the PDF's
+
+    // The set of nodes already visited. This ensures we terminate if the document's
     // bookmark graph is cyclic.
     visited: HashSet<FPDF_BOOKMARK>,
+
     // This bookmark will not be returned by the iterator (but its siblings and
     // descendants will be explored). May be NULL.
     skip_sibling: FPDF_BOOKMARK,
-    document_handle: FPDF_DOCUMENT,
-    bindings: &'a dyn PdfiumLibraryBindings,
+
+    lifetime: PhantomData<&'a FPDF_BOOKMARK>,
 }
 
 impl<'a> PdfBookmarksIterator<'a> {
@@ -145,15 +148,14 @@ impl<'a> PdfBookmarksIterator<'a> {
         include_descendants: bool,
         skip_sibling: Option<PdfBookmark<'a>>,
         document_handle: FPDF_DOCUMENT,
-        bindings: &'a dyn PdfiumLibraryBindings,
     ) -> Self {
         let mut result = PdfBookmarksIterator {
             document_handle,
             include_descendants,
             pending_stack: Vec::with_capacity(20),
             visited: HashSet::new(),
-            skip_sibling: null_mut(),
-            bindings,
+            skip_sibling: std::ptr::null_mut(),
+            lifetime: PhantomData,
         };
 
         // If we have a skip-sibling, record its handle.
@@ -168,7 +170,7 @@ impl<'a> PdfBookmarksIterator<'a> {
                 start_node
                     .parent()
                     .map(|parent| parent.bookmark_handle())
-                    .unwrap_or(null_mut()),
+                    .unwrap_or(std::ptr::null_mut()),
             ));
         }
 
@@ -180,8 +182,11 @@ impl<'a> Iterator for PdfBookmarksIterator<'a> {
     type Item = PdfBookmark<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
         // A straightforward tail-recursive function to walk the bookmarks might
-        // look about like this:
+        // look like this:
         //
         // pub fn walk(node: Option<PdfBookmark<'a>>) {
         //     if let Some(node) = node) {
@@ -203,7 +208,7 @@ impl<'a> Iterator for PdfBookmarksIterator<'a> {
         // - PdfIterator::visited keeps a HashSet of visited nodes, to ensure
         //   termination even if the PDF's bookmark graph is cyclic.
         // - PdfIterator::skip_sibling keeps a FPDF_BOOKMARK that will not be
-        //   returned by the iterator (but, importantly, it's siblings will
+        //   returned by the iterator (but, importantly, its siblings will
         //   still be explored).
 
         while let Some((node, parent)) = self.pending_stack.pop() {
@@ -216,17 +221,21 @@ impl<'a> Iterator for PdfBookmarksIterator<'a> {
             // after having addressed our descendants. It's okay if it's NULL,
             // we'll handle that when it comes off the stack.
             self.pending_stack.push((
-                self.bindings
-                    .FPDFBookmark_GetNextSibling(self.document_handle, node),
+                unsafe {
+                    self.bindings()
+                        .FPDFBookmark_GetNextSibling(self.document_handle, node)
+                },
                 parent,
             ));
 
             // Add our first descendant to the stack if we should include them.
-            // Again, its okay if it's NULL.
+            // Again, it's okay if it's NULL.
             if self.include_descendants {
                 self.pending_stack.push((
-                    self.bindings
-                        .FPDFBookmark_GetFirstChild(self.document_handle, node),
+                    unsafe {
+                        self.bindings()
+                            .FPDFBookmark_GetFirstChild(self.document_handle, node)
+                    },
                     node,
                 ));
             }
@@ -234,16 +243,19 @@ impl<'a> Iterator for PdfBookmarksIterator<'a> {
             // If the present node isn't the one we're meant to skip, return it.
             if node != self.skip_sibling {
                 let parent = if parent.is_null() { None } else { Some(parent) };
-                return Some(PdfBookmark::from_pdfium(
-                    node,
-                    parent,
-                    self.document_handle,
-                    self.bindings,
-                ));
+                return Some(PdfBookmark::from_pdfium(node, parent, self.document_handle));
             }
         }
 
-        // If we got here, then the stack is empty and we're done.
+        // If we get here then the stack is empty and we're done.
         None
     }
 }
+
+impl<'a> PdfiumLibraryBindingsAccessor<'a> for PdfBookmarksIterator<'a> {}
+
+#[cfg(feature = "thread_safe")]
+unsafe impl<'a> Send for PdfBookmarksIterator<'a> {}
+
+#[cfg(feature = "thread_safe")]
+unsafe impl<'a> Sync for PdfBookmarksIterator<'a> {}

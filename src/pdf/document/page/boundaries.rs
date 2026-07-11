@@ -2,9 +2,10 @@
 //! boundary boxes of a single [PdfPage].
 
 use crate::bindgen::{FPDF_BOOL, FPDF_PAGE, FS_RECTF};
-use crate::bindings::PdfiumLibraryBindings;
 use crate::error::PdfiumError;
 use crate::pdf::rect::PdfRect;
+use crate::pdfium::PdfiumLibraryBindingsAccessor;
+use std::marker::PhantomData;
 use std::os::raw::c_float;
 
 #[cfg(doc)]
@@ -61,25 +62,16 @@ impl PdfPageBoundaryBox {
 /// or visit: <https://www.pdfscripting.com/public/PDF-Page-Coordinates.cfm#UserSpace>
 pub struct PdfPageBoundaries<'a> {
     page_handle: FPDF_PAGE,
-    bindings: &'a dyn PdfiumLibraryBindings,
+    lifetime: PhantomData<&'a FPDF_PAGE>,
 }
 
 impl<'a> PdfPageBoundaries<'a> {
     #[inline]
-    pub(crate) fn from_pdfium(
-        page_handle: FPDF_PAGE,
-        bindings: &'a dyn PdfiumLibraryBindings,
-    ) -> Self {
+    pub(crate) fn from_pdfium(page_handle: FPDF_PAGE) -> Self {
         Self {
             page_handle,
-            bindings,
+            lifetime: PhantomData,
         }
-    }
-
-    /// Returns the [PdfiumLibraryBindings] used by this [PdfPageBoundaries] collection.
-    #[inline]
-    pub fn bindings(&self) -> &'a dyn PdfiumLibraryBindings {
-        self.bindings
     }
 
     /// Returns the boundary box defined for the containing [PdfPage] matching the
@@ -119,8 +111,11 @@ impl<'a> PdfPageBoundaries<'a> {
     /// is printed.
     #[inline]
     pub fn media(&self) -> Result<PdfPageBoundaryBox, PdfiumError> {
-        self.get_bounding_box_rect(|page, left, bottom, right, top| {
-            self.bindings
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        self.get_bounding_box_rect(|page, left, bottom, right, top| unsafe {
+            self.bindings()
                 .FPDFPage_GetMediaBox(page, left, bottom, right, top)
         })
         .map(|rect| PdfPageBoundaryBox::new(PdfPageBoundaryBoxType::Media, rect))
@@ -128,13 +123,18 @@ impl<'a> PdfPageBoundaries<'a> {
 
     /// Sets the Media boundary box for the containing [PdfPage] to the given [PdfRect].
     pub fn set_media(&mut self, rect: PdfRect) -> Result<(), PdfiumError> {
-        self.bindings.FPDFPage_SetMediaBox(
-            self.page_handle,
-            rect.left().value,
-            rect.bottom().value,
-            rect.right().value,
-            rect.top().value,
-        );
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        unsafe {
+            self.bindings().FPDFPage_SetMediaBox(
+                self.page_handle,
+                rect.left().value,
+                rect.bottom().value,
+                rect.right().value,
+                rect.top().value,
+            );
+        }
 
         Ok(())
     }
@@ -144,8 +144,11 @@ impl<'a> PdfPageBoundaries<'a> {
     /// It is typically cropped out when viewing the document on-screen.
     #[inline]
     pub fn art(&self) -> Result<PdfPageBoundaryBox, PdfiumError> {
-        self.get_bounding_box_rect(|page, left, bottom, right, top| {
-            self.bindings
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        self.get_bounding_box_rect(|page, left, bottom, right, top| unsafe {
+            self.bindings()
                 .FPDFPage_GetArtBox(page, left, bottom, right, top)
         })
         .map(|rect| PdfPageBoundaryBox::new(PdfPageBoundaryBoxType::Art, rect))
@@ -153,13 +156,18 @@ impl<'a> PdfPageBoundaries<'a> {
 
     /// Sets the Art boundary box for the containing [PdfPage] to the given [PdfRect].
     pub fn set_art(&mut self, rect: PdfRect) -> Result<(), PdfiumError> {
-        self.bindings.FPDFPage_SetArtBox(
-            self.page_handle,
-            rect.left().value,
-            rect.bottom().value,
-            rect.right().value,
-            rect.top().value,
-        );
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        unsafe {
+            self.bindings().FPDFPage_SetArtBox(
+                self.page_handle,
+                rect.left().value,
+                rect.bottom().value,
+                rect.right().value,
+                rect.top().value,
+            );
+        }
 
         Ok(())
     }
@@ -169,8 +177,11 @@ impl<'a> PdfPageBoundaries<'a> {
     /// It is typically cropped out when viewing the document on-screen.
     #[inline]
     pub fn bleed(&self) -> Result<PdfPageBoundaryBox, PdfiumError> {
-        self.get_bounding_box_rect(|page, left, bottom, right, top| {
-            self.bindings
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        self.get_bounding_box_rect(|page, left, bottom, right, top| unsafe {
+            self.bindings()
                 .FPDFPage_GetBleedBox(page, left, bottom, right, top)
         })
         .map(|rect| PdfPageBoundaryBox::new(PdfPageBoundaryBoxType::Bleed, rect))
@@ -178,13 +189,18 @@ impl<'a> PdfPageBoundaries<'a> {
 
     /// Sets the Bleed boundary box for the containing [PdfPage] to the given [PdfRect].
     pub fn set_bleed(&mut self, rect: PdfRect) -> Result<(), PdfiumError> {
-        self.bindings.FPDFPage_SetBleedBox(
-            self.page_handle,
-            rect.left().value,
-            rect.bottom().value,
-            rect.right().value,
-            rect.top().value,
-        );
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        unsafe {
+            self.bindings().FPDFPage_SetBleedBox(
+                self.page_handle,
+                rect.left().value,
+                rect.bottom().value,
+                rect.right().value,
+                rect.top().value,
+            );
+        }
 
         Ok(())
     }
@@ -194,8 +210,11 @@ impl<'a> PdfPageBoundaries<'a> {
     /// It is typically cropped out when viewing the document on-screen.
     #[inline]
     pub fn trim(&self) -> Result<PdfPageBoundaryBox, PdfiumError> {
-        self.get_bounding_box_rect(|page, left, bottom, right, top| {
-            self.bindings
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        self.get_bounding_box_rect(|page, left, bottom, right, top| unsafe {
+            self.bindings()
                 .FPDFPage_GetTrimBox(page, left, bottom, right, top)
         })
         .map(|rect| PdfPageBoundaryBox::new(PdfPageBoundaryBoxType::Trim, rect))
@@ -203,13 +222,18 @@ impl<'a> PdfPageBoundaries<'a> {
 
     /// Sets the Trim boundary box for the containing [PdfPage] to the given [PdfRect].
     pub fn set_trim(&mut self, rect: PdfRect) -> Result<(), PdfiumError> {
-        self.bindings.FPDFPage_SetTrimBox(
-            self.page_handle,
-            rect.left().value,
-            rect.bottom().value,
-            rect.right().value,
-            rect.top().value,
-        );
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        unsafe {
+            self.bindings().FPDFPage_SetTrimBox(
+                self.page_handle,
+                rect.left().value,
+                rect.bottom().value,
+                rect.right().value,
+                rect.top().value,
+            );
+        }
 
         Ok(())
     }
@@ -218,8 +242,11 @@ impl<'a> PdfPageBoundaries<'a> {
     /// The Crop box is the maximum extent of user-visible content when viewing the document on-screen.
     #[inline]
     pub fn crop(&self) -> Result<PdfPageBoundaryBox, PdfiumError> {
-        self.get_bounding_box_rect(|page, left, bottom, right, top| {
-            self.bindings
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        self.get_bounding_box_rect(|page, left, bottom, right, top| unsafe {
+            self.bindings()
                 .FPDFPage_GetCropBox(page, left, bottom, right, top)
         })
         .map(|rect| PdfPageBoundaryBox::new(PdfPageBoundaryBoxType::Crop, rect))
@@ -227,13 +254,18 @@ impl<'a> PdfPageBoundaries<'a> {
 
     /// Sets the Crop boundary box for the containing [PdfPage] to the given [PdfRect].
     pub fn set_crop(&mut self, rect: PdfRect) -> Result<(), PdfiumError> {
-        self.bindings.FPDFPage_SetCropBox(
-            self.page_handle,
-            rect.left().value,
-            rect.bottom().value,
-            rect.right().value,
-            rect.top().value,
-        );
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        unsafe {
+            self.bindings().FPDFPage_SetCropBox(
+                self.page_handle,
+                rect.left().value,
+                rect.bottom().value,
+                rect.right().value,
+                rect.top().value,
+            );
+        }
 
         Ok(())
     }
@@ -244,6 +276,9 @@ impl<'a> PdfPageBoundaries<'a> {
     /// be set explicitly.
     #[inline]
     pub fn bounding(&self) -> Result<PdfPageBoundaryBox, PdfiumError> {
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
         let mut rect = FS_RECTF {
             left: 0.0,
             top: 0.0,
@@ -251,11 +286,12 @@ impl<'a> PdfPageBoundaries<'a> {
             bottom: 0.0,
         };
 
-        let result = self
-            .bindings
-            .FPDF_GetPageBoundingBox(self.page_handle, &mut rect);
+        let result = unsafe {
+            self.bindings()
+                .FPDF_GetPageBoundingBox(self.page_handle, &mut rect)
+        };
 
-        PdfRect::from_pdfium_as_result(result, rect, self.bindings)
+        PdfRect::from_pdfium_as_result(result, rect, &*self.bindings())
             .map(|rect| PdfPageBoundaryBox::new(PdfPageBoundaryBoxType::Bounding, rect))
     }
 
@@ -286,7 +322,7 @@ impl<'a> PdfPageBoundaries<'a> {
                 right,
                 bottom,
             },
-            self.bindings,
+            &*self.bindings(),
         )
     }
 
@@ -298,6 +334,14 @@ impl<'a> PdfPageBoundaries<'a> {
         PageBoundaryIterator::new(self)
     }
 }
+
+impl<'a> PdfiumLibraryBindingsAccessor<'a> for PdfPageBoundaries<'a> {}
+
+#[cfg(feature = "thread_safe")]
+unsafe impl<'a> Send for PdfPageBoundaries<'a> {}
+
+#[cfg(feature = "thread_safe")]
+unsafe impl<'a> Sync for PdfPageBoundaries<'a> {}
 
 /// An iterator over all the [PdfPageBoundaryBox] objects defined for a [PdfPage].
 /// Not all boxes are guaranteed to exist for all pages, but where they are defined they will

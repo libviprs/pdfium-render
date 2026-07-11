@@ -2,11 +2,12 @@
 //! within a [PdfPage], a [PdfPageAnnotation], or a [PdfBookmark].
 
 use crate::bindgen::{FPDF_DOCUMENT, FPDF_LINK, FS_RECTF};
-use crate::bindings::PdfiumLibraryBindings;
 use crate::error::PdfiumError;
 use crate::pdf::action::PdfAction;
 use crate::pdf::destination::PdfDestination;
 use crate::pdf::rect::PdfRect;
+use crate::pdfium::PdfiumLibraryBindingsAccessor;
+use std::marker::PhantomData;
 
 #[cfg(doc)]
 use {
@@ -22,20 +23,16 @@ use {
 pub struct PdfLink<'a> {
     handle: FPDF_LINK,
     document: FPDF_DOCUMENT,
-    bindings: &'a dyn PdfiumLibraryBindings,
+    lifetime: PhantomData<&'a FPDF_LINK>,
 }
 
 impl<'a> PdfLink<'a> {
     #[inline]
-    pub(crate) fn from_pdfium(
-        handle: FPDF_LINK,
-        document: FPDF_DOCUMENT,
-        bindings: &'a dyn PdfiumLibraryBindings,
-    ) -> Self {
+    pub(crate) fn from_pdfium(handle: FPDF_LINK, document: FPDF_DOCUMENT) -> Self {
         PdfLink {
             handle,
             document,
-            bindings,
+            lifetime: PhantomData,
         }
     }
 
@@ -45,12 +42,6 @@ impl<'a> PdfLink<'a> {
         self.handle
     }
 
-    /// Returns the [PdfiumLibraryBindings] used by this [PdfLink].
-    #[inline]
-    pub fn bindings(&self) -> &'a dyn PdfiumLibraryBindings {
-        self.bindings
-    }
-
     /// Returns the [PdfAction] associated with this [PdfLink], if any.
     ///
     /// The action indicates the behaviour that will occur when the user interacts with the
@@ -58,7 +49,10 @@ impl<'a> PdfLink<'a> {
     /// of type [PdfActionType::GoToDestinationInSameDocument], but the PDF file format supports
     /// a variety of other actions.
     pub fn action(&self) -> Option<PdfAction<'a>> {
-        let handle = self.bindings().FPDFLink_GetAction(self.handle());
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        let handle = unsafe { self.bindings().FPDFLink_GetAction(self.handle()) };
 
         if handle.is_null() {
             None
@@ -76,24 +70,27 @@ impl<'a> PdfLink<'a> {
     /// The destination specifies the page and region, if any, that will be the target
     /// of any behaviour that will occur when the user interacts with the link in a PDF viewer.
     pub fn destination(&self) -> Option<PdfDestination<'a>> {
-        let handle = self
-            .bindings()
-            .FPDFLink_GetDest(self.document, self.handle());
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        let handle = unsafe {
+            self.bindings()
+                .FPDFLink_GetDest(self.document, self.handle())
+        };
 
         if handle.is_null() {
             None
         } else {
-            Some(PdfDestination::from_pdfium(
-                self.document,
-                handle,
-                self.bindings(),
-            ))
+            Some(PdfDestination::from_pdfium(self.document, handle))
         }
     }
 
     /// Returns the area on the page that the user can use to interact with this [PdfLink]
     /// in a PDF viewer, if any.
     pub fn rect(&self) -> Result<PdfRect, PdfiumError> {
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
         let mut rect = FS_RECTF {
             left: 0.0,
             top: 0.0,
@@ -102,13 +99,23 @@ impl<'a> PdfLink<'a> {
         };
 
         PdfRect::from_pdfium_as_result(
-            self.bindings()
-                .FPDFLink_GetAnnotRect(self.handle(), &mut rect),
+            unsafe {
+                self.bindings()
+                    .FPDFLink_GetAnnotRect(self.handle(), &mut rect)
+            },
             rect,
-            self.bindings(),
+            &*self.bindings(),
         )
     }
 }
+
+impl<'a> PdfiumLibraryBindingsAccessor<'a> for PdfLink<'a> {}
+
+#[cfg(feature = "thread_safe")]
+unsafe impl<'a> Send for PdfLink<'a> {}
+
+#[cfg(feature = "thread_safe")]
+unsafe impl<'a> Sync for PdfLink<'a> {}
 
 #[cfg(test)]
 mod tests {

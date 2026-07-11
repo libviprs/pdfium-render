@@ -72,7 +72,7 @@ pub const __USE_ISOC99: u32 = 1;
 pub const __USE_ISOC95: u32 = 1;
 pub const __USE_POSIX_IMPLICITLY: u32 = 1;
 pub const _POSIX_SOURCE: u32 = 1;
-pub const _POSIX_C_SOURCE: u32 = 200809;
+pub const _POSIX_C_SOURCE: u32 = 202405;
 pub const __USE_POSIX: u32 = 1;
 pub const __USE_POSIX2: u32 = 1;
 pub const __USE_POSIX199309: u32 = 1;
@@ -80,6 +80,7 @@ pub const __USE_POSIX199506: u32 = 1;
 pub const __USE_XOPEN2K: u32 = 1;
 pub const __USE_XOPEN2K8: u32 = 1;
 pub const _ATFILE_SOURCE: u32 = 1;
+pub const __USE_XOPEN2K24: u32 = 1;
 pub const __WORDSIZE: u32 = 64;
 pub const __WORDSIZE_TIME64_COMPAT32: u32 = 1;
 pub const __SYSCALL_WORDSIZE: u32 = 64;
@@ -99,7 +100,7 @@ pub const __STDC_IEC_60559_COMPLEX__: u32 = 201404;
 pub const __STDC_ISO_10646__: u32 = 201706;
 pub const __GNU_LIBRARY__: u32 = 6;
 pub const __GLIBC__: u32 = 2;
-pub const __GLIBC_MINOR__: u32 = 42;
+pub const __GLIBC_MINOR__: u32 = 43;
 pub const _SYS_CDEFS_H: u32 = 1;
 pub const __glibc_c99_flexarr_available: u32 = 1;
 pub const __LDOUBLE_REDIRECTS_TO_FLOAT128_ABI: u32 = 0;
@@ -328,7 +329,9 @@ pub const FPDF_FORMFIELD_XFA_TEXTFIELD: u32 = 15;
 pub const FPDF_FORMFIELD_COUNT: u32 = 16;
 pub const FPDF_INCREMENTAL: u32 = 1;
 pub const FPDF_NO_INCREMENTAL: u32 = 2;
-pub const FPDF_REMOVE_SECURITY: u32 = 3;
+pub const FPDF_REMOVE_SECURITY_DEPRECATED: u32 = 3;
+pub const FPDF_REMOVE_SECURITY: u32 = 4;
+pub const FPDF_SUBSET_NEW_FONTS: u32 = 8;
 pub const FXFONT_ANSI_CHARSET: u32 = 0;
 pub const FXFONT_DEFAULT_CHARSET: u32 = 1;
 pub const FXFONT_SYMBOL_CHARSET: u32 = 2;
@@ -627,7 +630,7 @@ pub type _FPDF_DUPLEXTYPE_ = ::std::os::raw::c_uint;
 pub use self::_FPDF_DUPLEXTYPE_ as FPDF_DUPLEXTYPE;
 #[doc = " String types"]
 pub type FPDF_WCHAR = ::std::os::raw::c_ushort;
-#[doc = " Public PDFium API type for byte strings."]
+#[doc = " The public PDFium API uses three types of strings: byte string, wide string\n (UTF-16LE encoded), and platform dependent string.\n Public PDFium API type for byte strings."]
 pub type FPDF_BYTESTRING = *const ::std::os::raw::c_char;
 #[doc = " The public PDFium API always uses UTF-16LE encoded wide strings, each\n character uses 2 bytes (except surrogation), with the low byte first."]
 pub type FPDF_WIDESTRING = *const FPDF_WCHAR;
@@ -726,6 +729,12 @@ pub const FPDF_RENDERER_TYPE_FPDF_RENDERERTYPE_AGG: FPDF_RENDERER_TYPE = 0;
 pub const FPDF_RENDERER_TYPE_FPDF_RENDERERTYPE_SKIA: FPDF_RENDERER_TYPE = 1;
 #[doc = " PDF renderer types - Experimental.\n Selection of 2D graphics library to use for rendering to FPDF_BITMAPs."]
 pub type FPDF_RENDERER_TYPE = ::std::os::raw::c_uint;
+#[doc = " FreeType - https://freetype.org/"]
+pub const FPDF_FONT_BACKEND_TYPE_FPDF_FONTBACKENDTYPE_FREETYPE: FPDF_FONT_BACKEND_TYPE = 0;
+#[doc = " Fontations - https://github.com/googlefonts/fontations/"]
+pub const FPDF_FONT_BACKEND_TYPE_FPDF_FONTBACKENDTYPE_FONTATIONS: FPDF_FONT_BACKEND_TYPE = 1;
+#[doc = " PDF font library types - Experimental.\n Selection of font backend library to use."]
+pub type FPDF_FONT_BACKEND_TYPE = ::std::os::raw::c_uint;
 #[doc = " Process-wide options for initializing the library."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -734,14 +743,16 @@ pub struct FPDF_LIBRARY_CONFIG_ {
     pub version: ::std::os::raw::c_int,
     #[doc = " Array of paths to scan in place of the defaults when using built-in\n FXGE font loading code. The array is terminated by a NULL pointer.\n The Array may be NULL itself to use the default paths. May be ignored\n entirely depending upon the platform."]
     pub m_pUserFontPaths: *mut *const ::std::os::raw::c_char,
-    #[doc = " Pointer to the v8::Isolate to use, or NULL to force PDFium to create one."]
+    #[doc = " Version 2.\n Pointer to the v8::Isolate to use, or NULL to force PDFium to create one."]
     pub m_pIsolate: *mut ::std::os::raw::c_void,
     #[doc = " The embedder data slot to use in the v8::Isolate to store PDFium's\n per-isolate data. The value needs to be in the range\n [0, |v8::Internals::kNumIsolateDataLots|). Note that 0 is fine for most\n embedders."]
     pub m_v8EmbedderSlot: ::std::os::raw::c_uint,
-    #[doc = " Pointer to the V8::Platform to use."]
+    #[doc = " Version 3 - Experimental.\n Pointer to the V8::Platform to use."]
     pub m_pPlatform: *mut ::std::os::raw::c_void,
-    #[doc = " Explicit specification of core renderer to use. |m_RendererType| must be\n a valid value for |FPDF_LIBRARY_CONFIG| versions of this level or higher,\n or else the initialization will fail with an immediate crash.\n Note that use of a specified |FPDF_RENDERER_TYPE| value for which the\n corresponding render library is not included in the build will similarly\n fail with an immediate crash."]
+    #[doc = " Version 4 - Experimental.\n Explicit specification of 2D graphics rendering library to use.\n |m_RendererType| must be a valid value for |FPDF_LIBRARY_CONFIG| versions\n of this level or higher, or else the initialization will fail with an\n immediate crash.\n Note that use of a specified |FPDF_RENDERER_TYPE| value for which the\n corresponding 2D graphics rendering library is not included in the build\n will similarly fail with an immediate crash."]
     pub m_RendererType: FPDF_RENDERER_TYPE,
+    #[doc = " Version 5 - Experimental.\n Explicit specification of font library to use when |m_RendererType| is set\n to |FPDF_RENDERERTYPE_SKIA|.\n |m_FontLibraryType| must be a valid value for |FPDF_LIBRARY_CONFIG|\n versions of this level or higher, or else the initialization will fail with\n an immediate crash.\n Note that use of a specified |FPDF_FONT_BACKEND_TYPE| value for which the\n corresponding font library is not included in the build will similarly fail\n with an immediate crash."]
+    pub m_FontLibraryType: FPDF_FONT_BACKEND_TYPE,
 }
 #[doc = " Process-wide options for initializing the library."]
 pub type FPDF_LIBRARY_CONFIG = FPDF_LIBRARY_CONFIG_;
@@ -1507,7 +1518,7 @@ unsafe extern "C" {
     ) -> FPDF_DOCUMENT;
 }
 unsafe extern "C" {
-    #[doc = " Experimental API.\n Create a template to generate form xobjects from |src_doc|'s page at\n |src_page_index|, for use in |dest_doc|.\n\n Returns a handle on success, or NULL on failure. Caller owns the newly\n created object."]
+    #[doc = " Experimental API.\n Create a template to generate form xobjects from |src_doc|'s page at\n |src_page_index|, for use in |dest_doc|.\n\n Returns a handle on success, or NULL on failure. Caller owns the newly\n created object. The returned handle's lifetime is tied to |dest_doc| and not\n |src_doc|. It must be closed before |dest_doc|."]
     pub fn FPDF_NewXObjectFromPage(
         dest_doc: FPDF_DOCUMENT,
         src_doc: FPDF_DOCUMENT,
@@ -1843,8 +1854,16 @@ unsafe extern "C" {
     pub fn FPDFCatalog_IsTagged(document: FPDF_DOCUMENT) -> FPDF_BOOL;
 }
 unsafe extern "C" {
+    #[doc = " Experimental API.\n Gets the language of |document| from the catalog's /Lang entry.\n\n   document - handle to a document.\n   buffer   - a buffer for the language string. May be NULL.\n   buflen   - the length of the buffer, in bytes. May be 0.\n\n Returns the number of bytes in the language string, including the\n trailing NUL character. The number of bytes is returned regardless of the\n |buffer| and |buflen| parameters.\n\n Regardless of the platform, the |buffer| is always in UTF-16LE\n encoding. The string is terminated by a UTF16 NUL character. If\n |buflen| is less than the required length, or |buffer| is NULL,\n |buffer| will not be modified.\n\n If |document| has no /Lang entry, an empty string is written to |buffer| and\n 2 is returned. On error, nothing is written to |buffer| and 0 is returned."]
+    pub fn FPDFCatalog_GetLanguage(
+        document: FPDF_DOCUMENT,
+        buffer: *mut FPDF_WCHAR,
+        buflen: ::std::os::raw::c_ulong,
+    ) -> ::std::os::raw::c_ulong;
+}
+unsafe extern "C" {
     #[doc = " Experimental API.\n Sets the language of |document| to |language|.\n\n document - handle to a document.\n language - the language to set to.\n\n Returns TRUE on success."]
-    pub fn FPDFCatalog_SetLanguage(document: FPDF_DOCUMENT, language: FPDF_BYTESTRING)
+    pub fn FPDFCatalog_SetLanguage(document: FPDF_DOCUMENT, language: FPDF_WIDESTRING)
     -> FPDF_BOOL;
 }
 #[doc = " Convenience types."]
@@ -1987,7 +2006,7 @@ unsafe extern "C" {
     ) -> FPDF_BOOL;
 }
 unsafe extern "C" {
-    #[doc = " Get the rotation of |page|.\n\n   page - handle to a page\n\n Returns one of the following indicating the page rotation:\n   0 - No rotation.\n   1 - Rotated 90 degrees clockwise.\n   2 - Rotated 180 degrees clockwise.\n   3 - Rotated 270 degrees clockwise."]
+    #[doc = " Get the rotation of |page|.\n\n   page - handle to a page\n\n Returns one of the following indicating the page rotation:\n   0 - No rotation.\n   1 - Rotated 90 degrees clockwise.\n   2 - Rotated 180 degrees clockwise.\n   3 - Rotated 270 degrees clockwise.\n\n Or returns -1 on error."]
     pub fn FPDFPage_GetRotation(page: FPDF_PAGE) -> ::std::os::raw::c_int;
 }
 unsafe extern "C" {
@@ -1995,8 +2014,8 @@ unsafe extern "C" {
     pub fn FPDFPage_SetRotation(page: FPDF_PAGE, rotate: ::std::os::raw::c_int);
 }
 unsafe extern "C" {
-    #[doc = " Insert |page_object| into |page|.\n\n   page        - handle to a page\n   page_object - handle to a page object. The |page_object| will be\n                 automatically freed."]
-    pub fn FPDFPage_InsertObject(page: FPDF_PAGE, page_object: FPDF_PAGEOBJECT);
+    #[doc = " Insert |page_object| into |page|.\n\n   page        - Handle to a page.\n   page_object - Handle to a page object. FPDFPage_InsertObject() takes\n                 ownership. Ownership of |page_object| transfers to |page| on\n                 success. |page_object| is freed on failure. Null\n                 |page_object| causes a failure.\n\n Returns true if successful."]
+    pub fn FPDFPage_InsertObject(page: FPDF_PAGE, page_object: FPDF_PAGEOBJECT) -> FPDF_BOOL;
 }
 unsafe extern "C" {
     #[doc = " Insert |page_object| into |page| at the specified |index|.\n\n   page        - handle to a page\n   page_object - handle to a page object as previously obtained by\n                 FPDFPageObj_CreateNew{Path|Rect}() or\n                 FPDFPageObj_New{Text|Image}Obj(). Ownership of the object\n                 is transferred back to PDFium.\n   index       - the index position to insert the object at. If index equals\n                 the current object count, the object will be appended to the\n                 end. If index is greater than the object count, the function\n                 will fail and return false.\n\n Returns true if successful."]
@@ -2117,6 +2136,13 @@ unsafe extern "C" {
         page_object: FPDF_PAGEOBJECT,
         name: FPDF_BYTESTRING,
     ) -> FPDF_PAGEOBJECTMARK;
+}
+unsafe extern "C" {
+    #[doc = " Experimental API.\n Add an existing content mark to a |page_object|. If consecutive page objects\n have the same |mark|, the generated PDF will contain a single mark that spans\n all of them. If the page objects are not consecutive, multiple copies of the\n |mark| are inserted in the PDF.\n\n   page_object - handle to a page object.\n   mark        - handle to a mark object.\n\n Returns true on success, or false on failure. The handles are all owned by\n the library. The |page_object| and |mark| params must be associated with the\n same document."]
+    pub fn FPDFPageObj_AddExistingMark(
+        page_object: FPDF_PAGEOBJECT,
+        mark: FPDF_PAGEOBJECTMARK,
+    ) -> FPDF_BOOL;
 }
 unsafe extern "C" {
     #[doc = " Experimental API.\n Removes a content |mark| from a |page_object|.\n The mark handle will be invalid after the removal.\n\n   page_object - handle to a page object.\n   mark        - handle to a content mark in that object to remove.\n\n Returns TRUE if the operation succeeded, FALSE if it failed."]
@@ -2551,14 +2577,22 @@ unsafe extern "C" {
     ) -> FPDF_PAGEOBJECT;
 }
 unsafe extern "C" {
-    #[doc = " Set the text for a text object. If it had text, it will be replaced.\n\n text_object  - handle to the text object.\n text         - the UTF-16LE encoded string containing the text to be added.\n\n Returns TRUE on success"]
+    #[doc = " Set the text for a text object. If it had text, it will be replaced.\n\n text_object  - handle to the text object.\n text         - the UTF-16LE encoded string containing the text to be added.\n\n Returns TRUE on success. Fails if |text_object| is null or if |text| is\n empty."]
     pub fn FPDFText_SetText(text_object: FPDF_PAGEOBJECT, text: FPDF_WIDESTRING) -> FPDF_BOOL;
 }
 unsafe extern "C" {
-    #[doc = " Experimental API.\n Set the text using charcodes for a text object. If it had text, it will be\n replaced.\n\n text_object  - handle to the text object.\n charcodes    - pointer to an array of charcodes to be added.\n count        - number of elements in |charcodes|.\n\n Returns TRUE on success"]
+    #[doc = " Experimental API.\n Set the text using charcodes for a text object. If it had text, it will be\n replaced.\n\n text_object  - handle to the text object.\n charcodes    - pointer to an array of charcodes to be added.\n count        - number of elements in |charcodes|.\n\n Returns TRUE on success. Fails if |text_object| or |charcodes| is null, or\n |count| is 0."]
     pub fn FPDFText_SetCharcodes(
         text_object: FPDF_PAGEOBJECT,
         charcodes: *const u32,
+        count: usize,
+    ) -> FPDF_BOOL;
+}
+unsafe extern "C" {
+    #[doc = " Experimental API.\n Set the character positions for a text object.\n\n text_object  - handle to the text object.\n positions    - pointer to an array of character positions to be set.\n count        - number of elements in |positions|.\n\n The |positions| array specifies the position in points for each character\n except the first one. The first character has an implied position value of 0.\n All positions are relative to the origin of the text object. The direction is\n either horizontal or vertical, depending on the direction of text in\n |text_object|.\n\n For a text object with N characters, |count| must be N - 1. Therefore this\n API fails when N <= 1.\n\n Returns TRUE on success."]
+    pub fn FPDFText_SetPositions(
+        text_object: FPDF_PAGEOBJECT,
+        positions: *const f32,
         count: usize,
     ) -> FPDF_BOOL;
 }
@@ -2590,6 +2624,10 @@ unsafe extern "C" {
 unsafe extern "C" {
     #[doc = " Get the font size of a text object.\n\n   text - handle to a text.\n   size - pointer to the font size of the text object, measured in points\n   (about 1/72 inch)\n\n Returns TRUE on success."]
     pub fn FPDFTextObj_GetFontSize(text: FPDF_PAGEOBJECT, size: *mut f32) -> FPDF_BOOL;
+}
+unsafe extern "C" {
+    #[doc = " Experimental API.\n Set the font size of a text object.\n\n   text - handle to a text page object.\n   size - the new font size, measured in points (1/72 inch). Must be\n          non-negative; zero is permitted to mirror\n          FPDFPageObj_NewTextObj() with size 0.\n\n Returns TRUE on success. Returns FALSE when |text| is not a text\n page object, or when |size| is negative."]
+    pub fn FPDFTextObj_SetFontSize(text: FPDF_PAGEOBJECT, size: f32) -> FPDF_BOOL;
 }
 unsafe extern "C" {
     #[doc = " Close a loaded PDF font.\n\n font   - Handle to the loaded font."]
@@ -3185,6 +3223,14 @@ unsafe extern "C" {
     ) -> ::std::os::raw::c_ulong;
 }
 unsafe extern "C" {
+    #[doc = " Experimental API.\n Function: FPDF_StructElement_GetExpansion\n          Get the expansion of an abbreviation or acronym for a given element.\n Parameters:\n          struct_element -   Handle to the struct element.\n          buffer         -   A buffer for output the expansion text. May be\n                             NULL.\n          buflen         -   The length of the buffer, in bytes. May be 0.\n Return value:\n          The number of bytes in the expansion text, including the terminating\n          NUL character. The number of bytes is returned regardless of the\n          |buffer| and |buflen| parameters.\n Comments:\n          Regardless of the platform, the |buffer| is always in UTF-16LE\n          encoding. The string is terminated by a UTF16 NUL character. If\n          |buflen| is less than the required length, or |buffer| is NULL,\n          |buffer| will not be modified."]
+    pub fn FPDF_StructElement_GetExpansion(
+        struct_element: FPDF_STRUCTELEMENT,
+        buffer: *mut ::std::os::raw::c_void,
+        buflen: ::std::os::raw::c_ulong,
+    ) -> ::std::os::raw::c_ulong;
+}
+unsafe extern "C" {
     #[doc = " Function: FPDF_StructElement_GetID\n          Get the ID for a given element.\n Parameters:\n          struct_element -   Handle to the struct element.\n          buffer         -   A buffer for output the ID string. May be NULL.\n          buflen         -   The length of the buffer, in bytes. May be 0.\n Return value:\n          The number of bytes in the ID string, including the terminating NUL\n          character. The number of bytes is returned regardless of the\n          |buffer| and |buflen| parameters.\n Comments:\n          Regardless of the platform, the |buffer| is always in UTF-16LE\n          encoding. The string is terminated by a UTF16 NUL character. If\n          |buflen| is less than the required length, or |buffer| is NULL,\n          |buffer| will not be modified."]
     pub fn FPDF_StructElement_GetID(
         struct_element: FPDF_STRUCTELEMENT,
@@ -3550,7 +3596,7 @@ pub type FWL_VKEYCODE = ::std::os::raw::c_uint;
 pub struct _IPDF_JsPlatform {
     #[doc = " Version number of the interface. Currently must be 2."]
     pub version: ::std::os::raw::c_int,
-    #[doc = " Method: app_alert\n       Pop up a dialog to show warning or hint.\n Interface Version:\n       1\n Implementation Required:\n       yes\n Parameters:\n       pThis       -   Pointer to the interface structure itself.\n       Msg         -   A string containing the message to be displayed.\n       Title       -   The title of the dialog.\n       Type        -   The type of button group, one of the\n                       JSPLATFORM_ALERT_BUTTON_* values above.\n       nIcon       -   The type of the icon, one of the\n                       JSPLATFORM_ALERT_ICON_* above.\n Return Value:\n       Option selected by user in dialogue, one of the\n       JSPLATFORM_ALERT_RETURN_* values above."]
+    #[doc = " Version 1.\n Method: app_alert\n       Pop up a dialog to show warning or hint.\n Interface Version:\n       1\n Implementation Required:\n       yes\n Parameters:\n       pThis       -   Pointer to the interface structure itself.\n       Msg         -   A string containing the message to be displayed.\n       Title       -   The title of the dialog.\n       Type        -   The type of button group, one of the\n                       JSPLATFORM_ALERT_BUTTON_* values above.\n       nIcon       -   The type of the icon, one of the\n                       JSPLATFORM_ALERT_ICON_* above.\n Return Value:\n       Option selected by user in dialogue, one of the\n       JSPLATFORM_ALERT_RETURN_* values above."]
     pub app_alert: ::std::option::Option<
         unsafe extern "C" fn(
             pThis: *mut _IPDF_JsPlatform,
@@ -3673,7 +3719,7 @@ pub type FPDF_SYSTEMTIME = _FPDF_SYSTEMTIME;
 pub struct _FPDF_FORMFILLINFO {
     #[doc = " Version number of the interface.\n Version 1 contains stable interfaces. Version 2 has additional\n experimental interfaces.\n When PDFium is built without the XFA module, version can be 1 or 2.\n With version 1, only stable interfaces are called. With version 2,\n additional experimental interfaces are also called.\n When PDFium is built with the XFA module, version must be 2.\n All the XFA related interfaces are experimental. If PDFium is built with\n the XFA module and version 1 then none of the XFA related interfaces\n would be called. When PDFium is built with XFA module then the version\n must be 2."]
     pub version: ::std::os::raw::c_int,
-    #[doc = " Method: Release\n       Give the implementation a chance to release any resources after the\n       interface is no longer used.\n Interface Version:\n       1\n Implementation Required:\n       No\n Comments:\n       Called by PDFium during the final cleanup process.\n Parameters:\n       pThis       -   Pointer to the interface structure itself\n Return Value:\n       None"]
+    #[doc = " Version 1.\n Method: Release\n       Give the implementation a chance to release any resources after the\n       interface is no longer used.\n Interface Version:\n       1\n Implementation Required:\n       No\n Comments:\n       Called by PDFium during the final cleanup process.\n Parameters:\n       pThis       -   Pointer to the interface structure itself\n Return Value:\n       None"]
     pub Release: ::std::option::Option<unsafe extern "C" fn(pThis: *mut _FPDF_FORMFILLINFO)>,
     #[doc = " Method: FFI_Invalidate\n       Invalidate the client area within the specified rectangle.\n Interface Version:\n       1\n Implementation Required:\n       yes\n Parameters:\n       pThis       -   Pointer to the interface structure itself.\n       page        -   Handle to the page. Returned by FPDF_LoadPage().\n       left        -   Left position of the client area in PDF page\n                       coordinates.\n       top         -   Top position of the client area in PDF page\n                       coordinates.\n       right       -   Right position of the client area in PDF page\n                       coordinates.\n       bottom      -   Bottom position of the client area in PDF page\n                       coordinates.\n Return Value:\n       None.\n Comments:\n       All positions are measured in PDF \"user space\".\n       Implementation should call FPDF_RenderPageBitmap() for repainting\n       the specified page area."]
     pub FFI_Invalidate: ::std::option::Option<
@@ -3767,7 +3813,7 @@ pub struct _FPDF_FORMFILLINFO {
     >,
     #[doc = " Pointer to IPDF_JSPLATFORM interface.\n Unused if PDFium is built without V8 support. Otherwise, if NULL, then\n JavaScript will be prevented from executing while rendering the document."]
     pub m_pJsPlatform: *mut IPDF_JSPLATFORM,
-    #[doc = " Whether the XFA module is disabled when built with the XFA module.\n Interface Version:\n       Ignored if |version| < 2."]
+    #[doc = " Version 2 - Experimental.\n Whether the XFA module is disabled when built with the XFA module.\n Interface Version:\n       Ignored if |version| < 2."]
     pub xfa_disabled: FPDF_BOOL,
     #[doc = " Method: FFI_DisplayCaret\n       This method will show the caret at specified position.\n Interface Version:\n       Ignored if |version| < 2.\n Implementation Required:\n       Required for XFA, otherwise set to NULL.\n Parameters:\n       pThis           -   Pointer to the interface structure itself.\n       page            -   Handle to page. Returned by FPDF_LoadPage().\n       left            -   Left position of the client area in PDF page\n                           coordinates.\n       top             -   Top position of the client area in PDF page\n                           coordinates.\n       right           -   Right position of the client area in PDF page\n                           coordinates.\n       bottom          -   Bottom position of the client area in PDF page\n                           coordinates.\n Return value:\n       None."]
     pub FFI_DisplayCaret: ::std::option::Option<
@@ -4244,7 +4290,7 @@ unsafe extern "C" {
     ) -> FPDF_JAVASCRIPT_ACTION;
 }
 unsafe extern "C" {
-    #[doc = "   javascript - Handle to a JavaScript action."]
+    #[doc = " Experimental API.\n Close a loaded FPDF_JAVASCRIPT_ACTION object.\n   javascript - Handle to a JavaScript action."]
     pub fn FPDFDoc_CloseJavaScriptAction(javascript: FPDF_JAVASCRIPT_ACTION);
 }
 unsafe extern "C" {
@@ -4269,11 +4315,11 @@ unsafe extern "C" {
 pub struct FPDF_FILEWRITE_ {
     #[doc = "\n Version number of the interface. Currently must be 1.\n"]
     pub version: ::std::os::raw::c_int,
-    #[doc = " Method: WriteBlock\n          Output a block of data in your custom way.\n Interface Version:\n          1\n Implementation Required:\n          Yes\n Comments:\n          Called by function FPDF_SaveDocument\n Parameters:\n          pThis       -   Pointer to the structure itself\n          pData       -   Pointer to a buffer to output\n          size        -   The size of the buffer.\n Return value:\n          Should be non-zero if successful, zero for error."]
+    #[doc = " Method: WriteBlock\n          Output a block of data in your custom way.\n Interface Version:\n          1\n Implementation Required:\n          Yes\n Comments:\n          Called by function FPDF_SaveDocument\n Parameters:\n          self        -   Pointer to the structure itself\n          data        -   Pointer to a buffer to output\n          size        -   The size of the buffer.\n Return value:\n          Should be non-zero if successful, zero for error."]
     pub WriteBlock: ::std::option::Option<
         unsafe extern "C" fn(
-            pThis: *mut FPDF_FILEWRITE_,
-            pData: *const ::std::os::raw::c_void,
+            self_: *mut FPDF_FILEWRITE_,
+            data: *const ::std::os::raw::c_void,
             size: ::std::os::raw::c_ulong,
         ) -> ::std::os::raw::c_int,
     >,
@@ -4281,20 +4327,20 @@ pub struct FPDF_FILEWRITE_ {
 #[doc = " Structure for custom file write"]
 pub type FPDF_FILEWRITE = FPDF_FILEWRITE_;
 unsafe extern "C" {
-    #[doc = " Function: FPDF_SaveAsCopy\n          Saves the copy of specified document in custom way.\n Parameters:\n          document        -   Handle to document, as returned by\n                              FPDF_LoadDocument() or FPDF_CreateNewDocument().\n          pFileWrite      -   A pointer to a custom file write structure.\n          flags           -   Flags above that affect how the PDF gets saved.\n                              Pass in 0 when there are no flags.\n Return value:\n          TRUE for succeed, FALSE for failed.\n"]
+    #[doc = " Function: FPDF_SaveAsCopy\n          Saves the copy of specified document in custom way.\n Parameters:\n          document        -   Handle to document, as returned by\n                              FPDF_LoadDocument() or FPDF_CreateNewDocument().\n          file_write      -   A pointer to a custom file write structure.\n          flags           -   Flags above that affect how the PDF gets saved.\n                              Pass in 0 when there are no flags.\n Return value:\n          TRUE for succeed, FALSE for failed.\n"]
     pub fn FPDF_SaveAsCopy(
         document: FPDF_DOCUMENT,
-        pFileWrite: *mut FPDF_FILEWRITE,
+        file_write: *mut FPDF_FILEWRITE,
         flags: FPDF_DWORD,
     ) -> FPDF_BOOL;
 }
 unsafe extern "C" {
-    #[doc = " Function: FPDF_SaveWithVersion\n          Same as FPDF_SaveAsCopy(), except the file version of the\n          saved document can be specified by the caller.\n Parameters:\n          document        -   Handle to document.\n          pFileWrite      -   A pointer to a custom file write structure.\n          flags           -   The creating flags.\n          fileVersion     -   The PDF file version. File version: 14 for 1.4,\n                              15 for 1.5, ...\n Return value:\n          TRUE if succeed, FALSE if failed.\n"]
+    #[doc = " Function: FPDF_SaveWithVersion\n          Same as FPDF_SaveAsCopy(), except the file version of the\n          saved document can be specified by the caller.\n Parameters:\n          document        -   Handle to document.\n          file_write      -   A pointer to a custom file write structure.\n          flags           -   The creating flags.\n          file_version    -   The PDF file version. File version: 14 for 1.4,\n                              15 for 1.5, ...\n Return value:\n          TRUE if succeed, FALSE if failed.\n"]
     pub fn FPDF_SaveWithVersion(
         document: FPDF_DOCUMENT,
-        pFileWrite: *mut FPDF_FILEWRITE,
+        file_write: *mut FPDF_FILEWRITE,
         flags: FPDF_DWORD,
-        fileVersion: ::std::os::raw::c_int,
+        file_version: ::std::os::raw::c_int,
     ) -> FPDF_BOOL;
 }
 #[doc = " Interface: FPDF_SYSFONTINFO\n          Interface for getting system font information and font mapping"]

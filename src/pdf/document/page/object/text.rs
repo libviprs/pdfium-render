@@ -16,20 +16,21 @@ use crate::bindings::PdfiumLibraryBindings;
 use crate::error::{PdfiumError, PdfiumInternalError};
 use crate::pdf::document::fonts::ToPdfFontToken;
 use crate::pdf::document::page::object::private::internal::PdfPageObjectPrivate;
-use crate::pdf::document::page::object::{
-    PdfPageObject, PdfPageObjectCommon, PdfPageObjectOwnership,
-};
-
+use crate::pdf::document::page::object::PdfPageObjectOwnership;
 use crate::pdf::document::PdfDocument;
 use crate::pdf::font::PdfFont;
 use crate::pdf::matrix::{PdfMatrix, PdfMatrixValue};
 use crate::pdf::points::PdfPoints;
+use crate::pdfium::PdfiumLibraryBindingsAccessor;
 use crate::utils::mem::create_byte_buffer;
 use crate::utils::utf16le::get_string_from_pdfium_utf16le_bytes;
 use crate::{create_transform_getters, create_transform_setters};
+use std::marker::PhantomData;
 
 #[cfg(any(
     feature = "pdfium_future",
+    feature = "pdfium_7881",
+    feature = "pdfium_7763",
     feature = "pdfium_7543",
     feature = "pdfium_7350",
     feature = "pdfium_7215",
@@ -46,6 +47,7 @@ use {
 
 #[cfg(doc)]
 use {
+    crate::pdf::document::page::object::PdfPageObject,
     crate::pdf::document::page::object::PdfPageObjectType,
     crate::pdf::document::page::objects::common::PdfPageObjectsCommon,
     crate::pdf::document::page::PdfPage,
@@ -165,7 +167,7 @@ impl PdfPageTextRenderMode {
 pub struct PdfPageTextObject<'a> {
     object_handle: FPDF_PAGEOBJECT,
     ownership: PdfPageObjectOwnership,
-    bindings: &'a dyn PdfiumLibraryBindings,
+    lifetime: PhantomData<&'a FPDF_PAGEOBJECT>,
 }
 
 impl<'a> PdfPageTextObject<'a> {
@@ -173,12 +175,11 @@ impl<'a> PdfPageTextObject<'a> {
     pub(crate) fn from_pdfium(
         object_handle: FPDF_PAGEOBJECT,
         ownership: PdfPageObjectOwnership,
-        bindings: &'a dyn PdfiumLibraryBindings,
     ) -> Self {
         PdfPageTextObject {
             object_handle,
             ownership,
-            bindings,
+            lifetime: PhantomData,
         }
     }
 
@@ -217,7 +218,10 @@ impl<'a> PdfPageTextObject<'a> {
         font_size: PdfPoints,
         bindings: &'a dyn PdfiumLibraryBindings,
     ) -> Result<Self, PdfiumError> {
-        let handle = bindings.FPDFPageObj_CreateTextObj(document, font, font_size.value);
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        let handle = unsafe { bindings.FPDFPageObj_CreateTextObj(document, font, font_size.value) };
 
         if handle.is_null() {
             Err(PdfiumError::PdfiumLibraryInternalError(
@@ -227,7 +231,7 @@ impl<'a> PdfPageTextObject<'a> {
             let mut result = PdfPageTextObject {
                 object_handle: handle,
                 ownership: PdfPageObjectOwnership::unowned(),
-                bindings,
+                lifetime: PhantomData,
             };
 
             result.set_text(text)?;
@@ -238,11 +242,25 @@ impl<'a> PdfPageTextObject<'a> {
 
     /// Returns the text rendering mode for the text contained within this [PdfPageTextObject].
     pub fn render_mode(&self) -> PdfPageTextRenderMode {
-        PdfPageTextRenderMode::from_pdfium(
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        PdfPageTextRenderMode::from_pdfium(unsafe {
             self.bindings()
-                .FPDFTextObj_GetTextRenderMode(self.object_handle),
-        )
+                .FPDFTextObj_GetTextRenderMode(self.object_handle)
+        })
         .unwrap_or(PdfPageTextRenderMode::Unknown)
+    }
+
+    /// Returns `true` if the text rendering mode for the text contained within this
+    /// [PdfPageTextObject] is set to any value other than [PdfPageTextRenderMode::Invisible]
+    /// or [PdfPageTextRenderMode::InvisibleClipping].
+    #[inline]
+    pub fn is_visible(&self) -> bool {
+        match self.render_mode() {
+            PdfPageTextRenderMode::Invisible | PdfPageTextRenderMode::InvisibleClipping => false,
+            _ => true,
+        }
     }
 
     /// Returns the effective size of the text when rendered, taking into account both the
@@ -263,23 +281,48 @@ impl<'a> PdfPageTextObject<'a> {
     /// To retrieve the effective font size, taking vertical scaling into account, use the
     /// [PdfPageTextObject::scaled_font_size()] function.
     pub fn unscaled_font_size(&self) -> PdfPoints {
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
         let mut result = 0.0;
 
-        if self.bindings().is_true(
+        if self.bindings().is_true(unsafe {
             self.bindings()
-                .FPDFTextObj_GetFontSize(self.object_handle, &mut result),
-        ) {
+                .FPDFTextObj_GetFontSize(self.object_handle(), &mut result)
+        }) {
             PdfPoints::new(result)
         } else {
             PdfPoints::ZERO
         }
     }
 
+    #[cfg(any(feature = "pdfium_future", feature = "pdfium_7881"))]
+    /// Sets the font size of the text specified in this [PdfPageTextObject].
+    ///
+    /// Note that the effective size of the text when rendered may differ from the font size
+    /// if a scaling factor has been applied to this text object's transformation matrix.
+    pub fn set_unscaled_font_size(&self, points: PdfPoints) -> Result<(), PdfiumError> {
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        if self.bindings().is_true(unsafe {
+            self.bindings()
+                .FPDFTextObj_SetFontSize(self.object_handle(), points.value)
+        }) {
+            Ok(())
+        } else {
+            Err(PdfiumError::InvalidFontSize)
+        }
+    }
+
     /// Returns the [PdfFont] used to render the text contained within this [PdfPageTextObject].
+    #[inline]
     pub fn font(&self) -> PdfFont<'_> {
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
         PdfFont::from_pdfium(
-            self.bindings().FPDFTextObj_GetFont(self.object_handle),
-            self.bindings(),
+            unsafe { self.bindings().FPDFTextObj_GetFont(self.object_handle) },
             None,
             false,
         )
@@ -306,6 +349,9 @@ impl<'a> PdfPageTextObject<'a> {
     /// The [PdfPageText] object will be closed when the binding to it (`text_page` in the example above)
     /// falls out of scope.
     pub fn text(&self) -> String {
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
         // Retrieving the text from Pdfium is a two-step operation. First, we call
         // FPDFTextObj_GetText() with a null buffer; this will retrieve the length of
         // the text in bytes. If the length is zero, then there is no text associated
@@ -322,15 +368,17 @@ impl<'a> PdfPageTextObject<'a> {
         };
 
         if let Some(page_handle) = page_handle {
-            let text_handle = self.bindings().FPDFText_LoadPage(page_handle);
+            let text_handle = unsafe { self.bindings().FPDFText_LoadPage(page_handle) };
 
             if !text_handle.is_null() {
-                let buffer_length = self.bindings().FPDFTextObj_GetText(
-                    self.object_handle(),
-                    text_handle,
-                    std::ptr::null_mut(),
-                    0,
-                );
+                let buffer_length = unsafe {
+                    self.bindings().FPDFTextObj_GetText(
+                        self.object_handle(),
+                        text_handle,
+                        std::ptr::null_mut(),
+                        0,
+                    )
+                };
 
                 if buffer_length == 0 {
                     // There is no text.
@@ -340,16 +388,20 @@ impl<'a> PdfPageTextObject<'a> {
 
                 let mut buffer = create_byte_buffer(buffer_length as usize);
 
-                let result = self.bindings().FPDFTextObj_GetText(
-                    self.object_handle(),
-                    text_handle,
-                    buffer.as_mut_ptr() as *mut FPDF_WCHAR,
-                    buffer_length,
-                );
+                let result = unsafe {
+                    self.bindings().FPDFTextObj_GetText(
+                        self.object_handle(),
+                        text_handle,
+                        buffer.as_mut_ptr() as *mut FPDF_WCHAR,
+                        buffer_length,
+                    )
+                };
 
                 assert_eq!(result, buffer_length);
 
-                self.bindings.FPDFText_ClosePage(text_handle);
+                unsafe {
+                    self.bindings().FPDFText_ClosePage(text_handle);
+                }
 
                 get_string_from_pdfium_utf16le_bytes(buffer).unwrap_or_default()
             } else {
@@ -370,14 +422,17 @@ impl<'a> PdfPageTextObject<'a> {
     /// A single space will be used if the given text is empty, in order to avoid
     /// unexpected behaviour from Pdfium when dealing with an empty string.
     pub fn set_text(&mut self, text: impl ToString) -> Result<(), PdfiumError> {
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
         let text = text.to_string();
 
         let text = if text.is_empty() { " " } else { text.as_str() };
 
-        if self.bindings().is_true(
+        if self.bindings().is_true(unsafe {
             self.bindings()
-                .FPDFText_SetText_str(self.object_handle(), text),
-        ) {
+                .FPDFText_SetText_str(self.object_handle(), text)
+        }) {
             Ok(())
         } else {
             Err(PdfiumError::PdfiumLibraryInternalError(
@@ -391,10 +446,13 @@ impl<'a> PdfPageTextObject<'a> {
         &mut self,
         render_mode: PdfPageTextRenderMode,
     ) -> Result<(), PdfiumError> {
-        if self.bindings().is_true(
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
+        if self.bindings().is_true(unsafe {
             self.bindings()
-                .FPDFTextObj_SetTextRenderMode(self.object_handle(), render_mode.as_pdfium()),
-        ) {
+                .FPDFTextObj_SetTextRenderMode(self.object_handle(), render_mode.as_pdfium())
+        }) {
             Ok(())
         } else {
             Err(PdfiumError::PdfiumLibraryInternalError(
@@ -405,6 +463,8 @@ impl<'a> PdfPageTextObject<'a> {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_7881",
+        feature = "pdfium_7763",
         feature = "pdfium_7543",
         feature = "pdfium_7350",
         feature = "pdfium_7215",
@@ -423,6 +483,8 @@ impl<'a> PdfPageTextObject<'a> {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_7881",
+        feature = "pdfium_7763",
         feature = "pdfium_7543",
         feature = "pdfium_7350",
         feature = "pdfium_7215",
@@ -444,6 +506,8 @@ impl<'a> PdfPageTextObject<'a> {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_7881",
+        feature = "pdfium_7763",
         feature = "pdfium_7543",
         feature = "pdfium_7350",
         feature = "pdfium_7215",
@@ -510,40 +574,6 @@ impl<'a> PdfPageObjectPrivate<'a> for PdfPageTextObject<'a> {
     fn set_ownership(&mut self, ownership: PdfPageObjectOwnership) {
         self.ownership = ownership;
     }
-
-    #[inline]
-    fn bindings(&self) -> &dyn PdfiumLibraryBindings {
-        self.bindings
-    }
-
-    #[inline]
-    fn is_copyable_impl(&self) -> bool {
-        true
-    }
-
-    #[inline]
-    fn try_copy_impl<'b>(
-        &self,
-        document: FPDF_DOCUMENT,
-        bindings: &'b dyn PdfiumLibraryBindings,
-    ) -> Result<PdfPageObject<'b>, PdfiumError> {
-        let mut copy = PdfPageTextObject::new_from_handles(
-            document,
-            self.text(),
-            self.font().handle(),
-            self.unscaled_font_size(),
-            bindings,
-        )?;
-
-        copy.set_fill_color(self.fill_color()?)?;
-        copy.set_stroke_color(self.stroke_color()?)?;
-        copy.set_stroke_width(self.stroke_width()?)?;
-        copy.set_line_join(self.line_join()?)?;
-        copy.set_line_cap(self.line_cap()?)?;
-        copy.reset_matrix(self.matrix()?)?;
-
-        Ok(PdfPageObject::Text(copy))
-    }
 }
 
 impl<'a> Drop for PdfPageTextObject<'a> {
@@ -552,3 +582,11 @@ impl<'a> Drop for PdfPageTextObject<'a> {
         self.drop_impl();
     }
 }
+
+impl<'a> PdfiumLibraryBindingsAccessor<'a> for PdfPageTextObject<'a> {}
+
+#[cfg(feature = "thread_safe")]
+unsafe impl<'a> Send for PdfPageTextObject<'a> {}
+
+#[cfg(feature = "thread_safe")]
+unsafe impl<'a> Sync for PdfPageTextObject<'a> {}
