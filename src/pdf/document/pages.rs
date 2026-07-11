@@ -95,6 +95,9 @@ impl<'a> PdfPages<'a> {
 
     /// Returns the number of pages in this [PdfPages] collection.
     pub fn len(&self) -> PdfPageIndex {
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
         (unsafe { self.bindings().FPDF_GetPageCount(self.document_handle) }) as PdfPageIndex
     }
 
@@ -122,6 +125,9 @@ impl<'a> PdfPages<'a> {
 
     /// Returns a single [PdfPage] from this [PdfPages] collection.
     pub fn get(&self, index: PdfPageIndex) -> Result<PdfPage<'a>, PdfiumError> {
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
         if index >= self.len() {
             return Err(PdfiumError::PageIndexOutOfBounds);
         }
@@ -149,6 +155,9 @@ impl<'a> PdfPages<'a> {
     /// This is considerably faster than loading the page first via [PdfPages::get()] and then
     /// retrieving the page size using [PdfPage::page_size()].
     pub fn page_size(&self, index: PdfPageIndex) -> Result<PdfRect, PdfiumError> {
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
         if index >= self.len() {
             return Err(PdfiumError::PageIndexOutOfBounds);
         }
@@ -234,6 +243,9 @@ impl<'a> PdfPages<'a> {
         size: PdfPagePaperSize,
         index: PdfPageIndex,
     ) -> Result<PdfPage<'a>, PdfiumError> {
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
         let result = self.pdfium_page_handle_to_result(index, unsafe {
             self.bindings().FPDFPage_New(
                 self.document_handle,
@@ -290,7 +302,7 @@ impl<'a> PdfPages<'a> {
             pages,
             self.document_handle,
             destination_page_index,
-            self.bindings(),
+            &*self.bindings(),
         )
     }
 
@@ -304,6 +316,9 @@ impl<'a> PdfPages<'a> {
         destination_page_index: PdfPageIndex,
         bindings: &dyn PdfiumLibraryBindings,
     ) -> Result<(), PdfiumError> {
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
         let destination_page_count_before_import =
             unsafe { bindings.FPDF_GetPageCount(destination) };
 
@@ -343,7 +358,7 @@ impl<'a> PdfPages<'a> {
             source_page_range,
             self.document_handle,
             destination_page_index,
-            self.bindings(),
+            &*self.bindings(),
         )
     }
 
@@ -356,6 +371,9 @@ impl<'a> PdfPages<'a> {
         destination_page_index: PdfPageIndex,
         bindings: &dyn PdfiumLibraryBindings,
     ) -> Result<(), PdfiumError> {
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
         let no_of_pages_to_import =
             (source_page_range.end() - source_page_range.start() + 1) as PdfPageIndex;
 
@@ -413,6 +431,9 @@ impl<'a> PdfPages<'a> {
         columns_per_row: u8,
         size: PdfPagePaperSize,
     ) -> Result<PdfDocument<'_>, PdfiumError> {
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
         let handle = unsafe {
             self.bindings().FPDF_ImportNPagesToOne(
                 self.document_handle,
@@ -438,6 +459,9 @@ impl<'a> PdfPages<'a> {
         index: PdfPageIndex,
         page_handle: FPDF_PAGE,
     ) -> Result<PdfPage<'a>, PdfiumError> {
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
         if page_handle.is_null() {
             Err(PdfiumError::PdfiumLibraryInternalError(
                 PdfiumInternalError::Unknown,
@@ -502,6 +526,9 @@ impl<'a> PdfPages<'a> {
 
     /// Returns the [PdfPageMode] setting embedded in the containing [PdfDocument].
     pub fn page_mode(&self) -> PdfPageMode {
+        #[cfg(feature = "thread_safe")]
+        let _ffi = crate::pdfium::FfiLock::acquire();
+
         PdfPageMode::from_pdfium(unsafe {
             self.bindings().FPDFDoc_GetPageMode(self.document_handle)
         })
