@@ -4,6 +4,8 @@ use crate::bindgen::{
     FPDF_DOCUMENT, FPDF_ERR_FILE, FPDF_ERR_FORMAT, FPDF_ERR_PAGE, FPDF_ERR_PASSWORD,
     FPDF_ERR_SECURITY, FPDF_ERR_SUCCESS, FPDF_ERR_UNKNOWN,
 };
+#[cfg(feature = "thread_safe")]
+use crate::bindings::thread_safe::ThreadSafePdfiumBindings;
 use crate::bindings::PdfiumLibraryBindings;
 use crate::config::PdfiumLibraryConfig;
 use crate::error::{PdfiumError, PdfiumInternalError};
@@ -51,6 +53,24 @@ struct Blob;
 // lifetime-free access to that PdfiumLibraryBindings instance from any object that
 // implements the PdfiumLibraryBindingsAccessor trait.
 static BINDINGS: OnceCell<Box<dyn PdfiumLibraryBindings>> = OnceCell::new();
+
+// Boxes a freshly-constructed architecture-specific bindings implementation. When the
+// `thread_safe` feature is enabled the bindings are first wrapped in [ThreadSafePdfiumBindings],
+// which serialises every FFI call behind a process-wide mutex; without the feature the bindings
+// are boxed directly. Wrapping at construction means the shared `Box<dyn PdfiumLibraryBindings>`
+// promoted into the global `BINDINGS` is sound to use from multiple threads by construction, even
+// when reached directly through [Pdfium::bindings] (issue #262).
+#[cfg(feature = "thread_safe")]
+#[inline]
+fn box_bindings<T: PdfiumLibraryBindings + 'static>(bindings: T) -> Box<dyn PdfiumLibraryBindings> {
+    Box::new(ThreadSafePdfiumBindings::new(bindings))
+}
+
+#[cfg(not(feature = "thread_safe"))]
+#[inline]
+fn box_bindings<T: PdfiumLibraryBindings + 'static>(bindings: T) -> Box<dyn PdfiumLibraryBindings> {
+    Box::new(bindings)
+}
 
 // Pdfium exposes a non-reentrant C API: concurrent calls into the same library
 // instance corrupt Pdfium's internal state. When the `thread_safe` feature is
@@ -247,7 +267,7 @@ impl Pdfium {
         if BINDINGS.get().is_none() {
             let bindings = StaticPdfiumBindings::new();
 
-            Ok(Box::new(bindings))
+            Ok(box_bindings(bindings))
         } else {
             Err(PdfiumError::PdfiumLibraryBindingsAlreadyInitialized)
         }
@@ -266,7 +286,7 @@ impl Pdfium {
                     .map_err(PdfiumError::LoadLibraryError)?,
             )?;
 
-            Ok(Box::new(bindings))
+            Ok(box_bindings(bindings))
         } else {
             Err(PdfiumError::PdfiumLibraryBindingsAlreadyInitialized)
         }
@@ -286,7 +306,7 @@ impl Pdfium {
             if PdfiumRenderWasmState::lock().is_ready() {
                 let bindings = WasmPdfiumBindings::new();
 
-                Ok(Box::new(bindings))
+                Ok(box_bindings(bindings))
             } else {
                 Err(PdfiumError::PdfiumWasmModuleNotInitialized)
             }
@@ -310,7 +330,7 @@ impl Pdfium {
                     .map_err(PdfiumError::LoadLibraryError)?,
             )?;
 
-            Ok(Box::new(bindings))
+            Ok(box_bindings(bindings))
         } else {
             Err(PdfiumError::PdfiumLibraryBindingsAlreadyInitialized)
         }
