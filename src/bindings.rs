@@ -29,6 +29,11 @@ pub(crate) mod static_bindings;
 #[cfg(target_arch = "wasm32")]
 pub(crate) mod wasm_bindings;
 
+// Wraps any architecture-specific bindings implementation behind a process-wide mutex so that a
+// single Pdfium instance can be shared soundly across threads (Pdfium's C API is non-reentrant).
+#[cfg(feature = "thread_safe")]
+pub(crate) mod thread_safe;
+
 // The following dummy declarations are used only when running cargo doc.
 // They allow documentation of any target-specific functionality to be included
 // in documentation generated on a different target.
