@@ -1,0 +1,14 @@
+name: gitea-ci-relay
+on:
+  push:
+jobs:
+  nudge-mirror:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Trigger Gitea mirror sync
+        env:
+          GITEA_SYNC_TOKEN: ${{ secrets.GITEA_SYNC_TOKEN }}
+        run: |
+          curl -sf -X POST -H "Authorization: token $GITEA_SYNC_TOKEN" \
+            "https://git.opsite.ca/api/v1/repos/${{ github.repository }}/mirror-sync"
