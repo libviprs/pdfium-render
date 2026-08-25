@@ -1,5 +1,12 @@
+# To run locally using act, use command:
+# act -P ubuntu-latest=ghcr.io/catthehacker/ubuntu:rust-latest
+# See: https://github.com/nektos/act/issues/297
+
 name: Auto-build pdfium-render
 
+# Fork delta vs upstream: the trigger. Every branch push gets a run, so a push
+# to a PR branch always produces a signal (libviprs/libviprs#585). Everything
+# below this block is upstream's file, unmodified.
 on:
   push:
     branches: [ "**" ]
@@ -13,42 +20,13 @@ jobs:
   build:
 
     runs-on: ubuntu-latest
-    container:
-      image: rust:latest
 
     steps:
-    - name: Report pending status to GitHub
-      if: always()
-      run: |
-        curl -sf -X POST \
-          -H "Authorization: Bearer ${{ secrets.GH_STATUS_TOKEN }}" \
-          -H "Accept: application/vnd.github+json" \
-          "https://api.github.com/repos/${{ github.repository }}/statuses/${{ github.sha }}" \
-          -d '{"state":"pending","context":"gitea/build_test","description":"Gitea build_test running"}' || true
-
-    - name: Provide Node.js (rust image ships none; JS actions need it)
-      run: |
-        set -e
-        case "$(uname -m)" in
-          x86_64) NA=x64 ;;
-          aarch64|arm64) NA=arm64 ;;
-          *) echo "unsupported arch $(uname -m)"; exit 1 ;;
-        esac
-        curl -fsSL "https://nodejs.org/dist/v20.18.1/node-v20.18.1-linux-${NA}.tar.gz" | tar -xz -C /usr/local --strip-components=1
-        node --version
-
     - uses: actions/checkout@v4
     - name: Build
       run: rustup update && cargo build --verbose
     - name: Download Pdfium
-      run: |
-        set -e
-        case "$(uname -m)" in
-          x86_64) PA=x64 ;;
-          aarch64|arm64) PA=arm64 ;;
-          *) echo "unsupported arch $(uname -m)"; exit 1 ;;
-        esac
-        curl -L -o "pdfium.tgz" "https://github.com/bblanchon/pdfium-binaries/releases/download/chromium/${PDFIUM_RELEASE_TAG}/pdfium-linux-${PA}.tgz"
+      run: curl -L -o "pdfium.tgz" "https://github.com/bblanchon/pdfium-binaries/releases/download/chromium/${PDFIUM_RELEASE_TAG}/pdfium-linux-x64.tgz"
     - name: Unpack Pdfium
       run: mkdir pdfium && tar -xvzf pdfium.tgz -C pdfium
     - name: Install Pdfium
@@ -225,23 +203,3 @@ jobs:
       run: bash .github/scripts/wasm_api_compat_test.sh pdfium_7763
     - name: Check backward compatibility with pdfium_7881 and WASM bindings
       run: bash .github/scripts/wasm_api_compat_test.sh pdfium_7881
-
-  report:
-    runs-on: ubuntu-latest
-    container:
-      image: rust:latest
-    needs: [ build ]
-    if: always()
-    steps:
-    - name: Report final status to GitHub
-      run: |
-        if [ "${{ needs.build.result }}" = "success" ]; then
-          STATE=success
-        else
-          STATE=failure
-        fi
-        curl -sf -X POST \
-          -H "Authorization: Bearer ${{ secrets.GH_STATUS_TOKEN }}" \
-          -H "Accept: application/vnd.github+json" \
-          "https://api.github.com/repos/${{ github.repository }}/statuses/${{ github.sha }}" \
-          -d "{\"state\":\"${STATE}\",\"context\":\"gitea/build_test\",\"description\":\"Gitea build_test ${STATE}\"}" || true
