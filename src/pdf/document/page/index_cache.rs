@@ -1101,6 +1101,12 @@ mod tests {
         // I use large, distinctive synthetic handle values so they cannot collide with entries
         // left by any other test, and I remove my own entries at the end so I leave the shared
         // cache exactly as I found it.
+        //
+        // Everything I claim about the global length comes out of a single lock acquisition. This
+        // used to snapshot the length before and after and assert the delta was exactly 5, but a
+        // delta taken across two separate acquisitions is no more reliable than an absolute: any
+        // concurrent test that nets an entry into the gap moves it. That is a real flake under the
+        // default multi-threaded runner, and it is the very defect this test exists to describe.
 
         use crate::bindgen::{FPDF_DOCUMENT, FPDF_PAGE};
         use crate::pdf::document::page::PdfPageContentRegenerationStrategy;
@@ -1113,11 +1119,6 @@ mod tests {
         let b_page_0 = 0xB000_0001usize as FPDF_PAGE;
         let b_page_1 = 0xB000_0002usize as FPDF_PAGE;
         let b_page_2 = 0xB000_0003usize as FPDF_PAGE;
-
-        // Snapshot the whole-cache length before I add anything. Other tests may or may not have
-        // entries present depending on scheduling, so I only ever reason about the DELTA.
-
-        let global_before = PdfPageIndexCache::lock().pages_by_index.len();
 
         // Document A contributes two entries; document B contributes three. They coexist in the
         // shared cache, exactly the situation that breaks a global-length assertion.
@@ -1140,32 +1141,45 @@ mod tests {
             );
         }
 
+        // Take the two scoped counts and the global length under ONE guard, so all three describe
+        // the same instant and nothing here depends on what other tests are doing.
+
+        let (count_a, count_b, global) = {
+            let cache = PdfPageIndexCache::lock();
+
+            (
+                cache.count_for_document(document_a),
+                cache.count_for_document(document_b),
+                cache.pages_by_index.len(),
+            )
+        };
+
         // The document-scoped counts are exact and isolated: each document sees only its own
         // entries, regardless of the other document or of any foreign entries in the cache.
 
         assert_eq!(
-            PdfPageIndexCache::lock().count_for_document(document_a),
-            2,
+            count_a, 2,
             "count_for_document must see only document A's two entries"
         );
         assert_eq!(
-            PdfPageIndexCache::lock().count_for_document(document_b),
-            3,
+            count_b, 3,
             "count_for_document must see only document B's three entries"
         );
 
-        // Meanwhile the GLOBAL length has grown by all five entries at once. This is what the old
-        // per-document assertions were really measuring, which is why they could not survive a
-        // second document being present. A document-scoped assertion of `== 3` on document B would
-        // pass here; a global assertion of `== 3` would see `global_before + 5` and fail.
+        // Meanwhile the GLOBAL length carries both documents at once, so it can never come out as
+        // either document's own count. This is what the old per-document assertions were really
+        // measuring, which is why they could not survive a second document being present. A
+        // document-scoped assertion of `== 3` on document B passes here; a global one does not.
 
-        let global_after = PdfPageIndexCache::lock().pages_by_index.len();
-
-        assert_eq!(
-            global_after - global_before,
-            5,
+        assert!(
+            global >= count_a + count_b,
+            "the shared cache must hold at least both documents' entries: global {global}, \
+             document A {count_a}, document B {count_b}"
+        );
+        assert!(
+            global > count_b,
             "the shared cache holds entries for BOTH documents at once, so a global length \
-             assertion is not isolated to a single document"
+             assertion is not isolated to a single document: global {global}, document B {count_b}"
         );
 
         // Clean up my synthetic entries so the shared cache is left untouched for other tests.
