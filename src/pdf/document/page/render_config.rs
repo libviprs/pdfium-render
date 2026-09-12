@@ -613,10 +613,13 @@ impl PdfRenderConfig {
         "the [PdfPage] during rendering.",
         "the [PdfPage] during rendering,",
         "Pdfium's rendering pipeline supports _either_ rendering with form data _or_ rendering with
-            a custom transformation matrix, but not both at the same time. Applying any transformation
-            automatically disables rendering of form data. If you must render form data while simultaneously
-            applying transformations, consider using the [PdfPage::flatten()] function to flatten the
-            form elements and form data into the containing page."
+        a custom transformation matrix, but not both at the same time. Applying a transformation via
+        these setters automatically disables rendering of form data. If you must render form data while
+        simultaneously applying transformations, consider using the [PdfPage::flatten()] function to
+        flatten the form elements and form data into the containing page. Note that matrix-based
+        transformations will be applied _in addition to_ any intrinsic page rotation previously set
+        using the [PdfRenderConfig::rotate()], [PdfRenderConfig::rotate_if_portrait()], or
+        [PdfRenderConfig::rotate_if_landscape()] functions."
     );
 
     // The internal implementation of the transform() function used by the create_transform_setters!() macro.
@@ -1597,6 +1600,201 @@ mod tests {
                 );
             }
         }
+
+    /// Per-pixel mean absolute difference across all RGBA channels. Returns
+    /// infinity on a length mismatch so a dimension difference fails an
+    /// equality check and passes a divergence check.
+    fn mean_abs_diff(a: &[u8], b: &[u8]) -> f64 {
+        if a.len() != b.len() {
+            return f64::INFINITY;
+        }
+
+        let sum: u64 = a
+            .iter()
+            .zip(b)
+            .map(|(x, y)| (*x as i64 - *y as i64).unsigned_abs())
+            .sum();
+
+        sum as f64 / a.len() as f64
+    }
+
+    /// Builds a single-page A4 document with two asymmetric filled rectangles,
+    /// so that orientation is observable. A blank page would compare equal under
+    /// any rotation, which is why content is required.
+    fn create_asymmetric_a4(pdfium: &Pdfium) -> Result<PdfDocument<'_>, PdfiumError> {
+        let mut document = pdfium.create_new_pdf()?;
+
+        {
+            let mut page = document
+                .pages_mut()
+                .create_page_at_start(PdfPagePaperSize::Portrait(PdfPagePaperStandardSize::A4))?;
+
+            page.objects_mut().create_path_object_rect(
+                PdfRect::new(
+                    PdfPoints::new(640.0),
+                    PdfPoints::new(60.0),
+                    PdfPoints::new(800.0),
+                    PdfPoints::new(300.0),
+                ),
+                None,
+                None,
+                Some(PdfColor::RED),
+            )?;
+
+            page.objects_mut().create_path_object_rect(
+                PdfRect::new(
+                    PdfPoints::new(40.0),
+                    PdfPoints::new(400.0),
+                    PdfPoints::new(120.0),
+                    PdfPoints::new(560.0),
+                ),
+                None,
+                None,
+                Some(PdfColor::new(0, 0, 255, 255)),
+            )?;
+        }
+
+        Ok(document)
+    }
+
+    /// `FPDF_RenderPageBitmapWithMatrix` composes the caller matrix on top of
+    /// pdfium's display transform, which already applies the page's intrinsic
+    /// `/Rotate`. So the matrix render path with an identity matrix must produce
+    /// byte-identical output to the form-data path, which also applies `/Rotate`,
+    /// for every `/Rotate` value. A caller that mistakenly believed the matrix
+    /// path ignores `/Rotate` and pre-composed a rotation would fail this test.
+    #[test]
+    fn test_matrix_path_matches_form_path_for_each_intrinsic_rotation() -> Result<(), PdfiumError> {
+        let pdfium = test_bind_to_pdfium();
+        let mut document = create_asymmetric_a4(&pdfium)?;
+        let mut page = document.pages_mut().first()?;
+
+        for rotation in [
+            PdfPageRenderRotation::None,
+            PdfPageRenderRotation::Degrees90,
+            PdfPageRenderRotation::Degrees180,
+            PdfPageRenderRotation::Degrees270,
+        ] {
+            page.set_rotation(rotation);
+
+            let width = page.width().value.round() as Pixels;
+            let height = page.height().value.round() as Pixels;
+
+            // Form-data path: applies `/Rotate` automatically.
+            let form = page
+                .render_with_config(&PdfRenderConfig::new().set_target_size(width, height))?
+                .as_image()?
+                .to_rgba8()
+                .into_raw();
+
+            // Matrix path with an identity matrix.
+            let matrix = page
+                .render_with_config(
+                    &PdfRenderConfig::new()
+                        .set_target_size(width, height)
+                        .render_form_data(false),
+                )?
+                .as_image()?
+                .to_rgba8()
+                .into_raw();
+
+            let drift = mean_abs_diff(&matrix, &form);
+            assert!(
+                drift < 1.0,
+                "{rotation:?}: matrix path diverged from the form-data path ({drift:.3}/255), \
+                 so the matrix path is not applying /Rotate the way this test assumes",
+            );
+
+            // Negative control: a half-scale matrix-path render must differ, so a
+            // zero drift above can only mean genuine agreement, not two blanks.
+            let control = page
+                .render_with_config(
+                    &PdfRenderConfig::new()
+                        .set_fixed_size(width, height)
+                        .render_form_data(false)
+                        .scale_page_by_factor(0.5),
+                )?
+                .as_image()?
+                .to_rgba8()
+                .into_raw();
+
+            assert!(
+                mean_abs_diff(&control, &form) > 5.0,
+                "{rotation:?}: negative control did not diverge, the comparison is not discriminating",
+            );
+        }
+
+        Ok(())
+    }
+
+    /// Renders a `/Rotate 90` page as horizontal strips through the matrix path,
+    /// using the device-space strip matrix `[s, 0, 0, s, 0, -y_offset]`, and
+    /// stitches them. The result must match the full form-data render. If a
+    /// caller baked a rotation into the strip matrix, the strips would not stitch
+    /// to the correctly-rotated full render. `reset_matrix()` does not disable
+    /// form data on its own, so `render_form_data(false)` is required.
+    #[test]
+    fn test_matrix_path_strip_stitch_matches_full_render() -> Result<(), PdfiumError> {
+        let pdfium = test_bind_to_pdfium();
+        let mut document = create_asymmetric_a4(&pdfium)?;
+        let mut page = document.pages_mut().first()?;
+        page.set_rotation(PdfPageRenderRotation::Degrees90);
+
+        let width = page.width().value.round() as Pixels;
+        let height = page.height().value.round() as Pixels;
+
+        let full = page
+            .render_with_config(&PdfRenderConfig::new().set_target_size(width, height))?
+            .as_image()?
+            .to_rgba8()
+            .into_raw();
+
+        let strips: Pixels = 5;
+        let mut stitched: Vec<u8> = Vec::with_capacity(full.len());
+        let mut y_offset: Pixels = 0;
+
+        for i in 0..strips {
+            // The last strip absorbs any remainder so the strips cover the page.
+            let strip_height = if i == strips - 1 {
+                height - y_offset
+            } else {
+                height / strips
+            };
+
+            let strip = page
+                .render_with_config(
+                    &PdfRenderConfig::new()
+                        .set_fixed_size(width, strip_height)
+                        .clip(0, 0, width, strip_height)
+                        .render_form_data(false)
+                        .reset_matrix(PdfMatrix::new(
+                            1.0,
+                            0.0,
+                            0.0,
+                            1.0,
+                            0.0,
+                            -(y_offset as f32),
+                        ))?,
+                )?
+                .as_image()?
+                .to_rgba8()
+                .into_raw();
+
+            stitched.extend_from_slice(&strip);
+            y_offset += strip_height;
+        }
+
+        assert_eq!(
+            stitched.len(),
+            full.len(),
+            "stitched strips must cover the full page",
+        );
+
+        let drift = mean_abs_diff(&stitched, &full);
+        assert!(
+            drift < 1.0,
+            "matrix-path strips did not stitch to the full render ({drift:.3}/255)",
+        );
 
         Ok(())
     }

@@ -1349,31 +1349,6 @@ impl<'a> From<PdfPageUnsupportedObject<'a>> for PdfPageObject<'a> {
     }
 }
 
-impl<'a> Drop for PdfPageObject<'a> {
-    /// Closes this [PdfPageObject], releasing held memory.
-    #[inline]
-    fn drop(&mut self) {
-        #[cfg(feature = "thread_safe")]
-        let _ffi = crate::pdfium::FfiLock::acquire();
-
-        // The documentation for FPDFPageObj_Destroy() states that we only need
-        // call the function for page objects created by FPDFPageObj_CreateNew*() or
-        // FPDFPageObj_New*Obj() _and_ where the newly-created object was _not_ subsequently
-        // added to a PdfPage or PdfPageAnnotation via a call to FPDFPage_InsertObject() or
-        // FPDFAnnot_AppendObject().
-
-        // In other words, retrieving a page object that already exists in a document evidently
-        // does not allocate any additional resources, so we don't need to free anything.
-        // (Indeed, if we try to, Pdfium segfaults.)
-
-        if !self.ownership().is_owned() {
-            unsafe {
-                self.bindings().FPDFPageObj_Destroy(self.object_handle());
-            }
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use crate::prelude::*;

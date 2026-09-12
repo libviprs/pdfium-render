@@ -40,11 +40,28 @@ use {
     web_sys::{window, Blob, Response},
 };
 
+#[cfg(feature = "thread_safe")]
+use crate::bindings::thread_safe::ThreadSafePdfiumBindings;
+
 // The following dummy declaration is used only when running cargo doc.
 // It allows documentation of WASM-specific functionality to be included
 // in documentation generated on non-WASM targets.
 #[cfg(doc)]
 struct Blob;
+
+#[cfg(all(not(target_arch = "wasm32"), feature = "thread_safe"))]
+/// The trait bound for a thread-safe reader passed to [Pdfium::load_pdf_from_reader].
+pub trait PdfiumReader: Read + Seek + Send {}
+
+#[cfg(all(not(target_arch = "wasm32"), feature = "thread_safe"))]
+impl<R: Read + Seek + Send> PdfiumReader for R {}
+
+#[cfg(all(not(target_arch = "wasm32"), not(feature = "thread_safe")))]
+/// The trait bound for a non-thread-safe reader passed to [Pdfium::load_pdf_from_reader].
+pub trait PdfiumReader: Read + Seek {}
+
+#[cfg(all(not(target_arch = "wasm32"), not(feature = "thread_safe")))]
+impl<R: Read + Seek> PdfiumReader for R {}
 
 // The first instantiation of a Pdfium object will promote a concrete PdfiumLibraryBindings
 // trait implementation into a global static OnceCell. This allows for thread-safe,
@@ -178,14 +195,14 @@ impl Drop for FfiLock {
 /// method and hold it for the whole operation. The lock is reentrant, so a
 /// method never has to know whether its callers already hold it.
 #[cfg(feature = "thread_safe")]
-pub trait PdfiumLibraryBindingsAccessor<'a>: Send + Sync {
+pub(crate) trait PdfiumLibraryBindingsAccessor<'a>: Send + Sync {
     fn bindings(&self) -> &'a dyn PdfiumLibraryBindings {
         BINDINGS.wait().as_ref()
     }
 }
 
 #[cfg(not(feature = "thread_safe"))]
-pub trait PdfiumLibraryBindingsAccessor<'a> {
+pub(crate) trait PdfiumLibraryBindingsAccessor<'a> {
     fn bindings(&self) -> &'a dyn PdfiumLibraryBindings {
         BINDINGS.get().unwrap().as_ref()
     }
@@ -232,6 +249,9 @@ impl Pdfium {
         if BINDINGS.get().is_none() {
             let bindings = StaticPdfiumBindings::new();
 
+            #[cfg(feature = "thread_safe")]
+            let bindings = ThreadSafePdfiumBindings::new(bindings);
+
             Ok(Box::new(bindings))
         } else {
             Err(PdfiumError::PdfiumLibraryBindingsAlreadyInitialized)
@@ -250,6 +270,9 @@ impl Pdfium {
                 unsafe { Library::new(Self::pdfium_platform_library_name()) }
                     .map_err(PdfiumError::LoadLibraryError)?,
             )?;
+
+            #[cfg(feature = "thread_safe")]
+            let bindings = ThreadSafePdfiumBindings::new(bindings);
 
             Ok(Box::new(bindings))
         } else {
@@ -270,6 +293,9 @@ impl Pdfium {
         if BINDINGS.get().is_none() {
             if PdfiumRenderWasmState::lock().is_ready() {
                 let bindings = WasmPdfiumBindings::new();
+
+                #[cfg(feature = "thread_safe")]
+                let bindings = ThreadSafePdfiumBindings::new(bindings);
 
                 Ok(Box::new(bindings))
             } else {
@@ -294,6 +320,9 @@ impl Pdfium {
                 unsafe { Library::new(path.as_ref().as_os_str()) }
                     .map_err(PdfiumError::LoadLibraryError)?,
             )?;
+
+            #[cfg(feature = "thread_safe")]
+            let bindings = ThreadSafePdfiumBindings::new(bindings);
 
             Ok(Box::new(bindings))
         } else {
@@ -354,7 +383,7 @@ impl Pdfium {
     #[inline]
     pub fn new_with_config(
         bindings: Box<dyn PdfiumLibraryBindings>,
-        config: PdfiumLibraryConfig,
+        mut config: PdfiumLibraryConfig,
     ) -> Self {
         #[cfg(feature = "thread_safe")]
         let _ffi = crate::pdfium::FfiLock::acquire();
@@ -410,6 +439,9 @@ impl Pdfium {
     }
 
     /// Applies the given custom font provider to this [Pdfium] instance.
+    ///
+    /// If the given custom font provider implementation itself calls Pdfium functions,
+    /// then it will block when used in conjunction with this crate's `thread_safe` feature.
     pub fn set_custom_font_provider(&mut self, provider: Box<dyn PdfiumCustomFontProvider>) {
         #[cfg(feature = "thread_safe")]
         let _ffi = crate::pdfium::FfiLock::acquire();
@@ -559,6 +591,9 @@ impl Pdfium {
     /// Because Pdfium must know the total content length in advance prior to loading
     /// any portion of it, the given reader must implement the [Seek] trait as well as
     /// the [Read] trait.
+    ///
+    /// If the given reader implementation itself calls Pdfium functions, then it will block
+    /// when used in conjunction with this crate's `thread_safe` feature.
     ///
     /// If the document is password protected, the given password will be used
     /// to unlock it.
@@ -742,7 +777,7 @@ impl Default for Pdfium {
     /// will panic if no statically linked Pdfium functions can be located.
     #[inline]
     fn default() -> Self {
-        Pdfium::new(Pdfium::bind_to_statically_linked_library().unwrap())
+        Pdfium::new(Pdfium::bind_to_statically_linked_library().expect("No Pdfium library found"))
     }
 
     #[cfg(not(feature = "static"))]
@@ -769,12 +804,14 @@ impl Default for Pdfium {
                         // current working directory does not exist or is corrupted, we attempt
                         // to fall back to a system-provided library.
 
-                        Pdfium::new(Pdfium::bind_to_system_library().unwrap())
+                        Pdfium::new(
+                            Pdfium::bind_to_system_library().expect("No Pdfium library found"),
+                        )
                     }
-                    _ => Err(PdfiumError::LoadLibraryError(err)).unwrap(), // Explicitly re-throw the error
+                    _ => Err(PdfiumError::LoadLibraryError(err)).expect("No Pdfium library found"), // Explicitly re-throw the error
                 }
             }
-            Err(err) => Err(err).unwrap(), // Explicitly re-throw the error
+            Err(err) => Err(err).expect("No Pdfium library found"), // Explicitly re-throw the error
         }
     }
 
@@ -783,7 +820,7 @@ impl Default for Pdfium {
     ///
     /// This function will panic if no suitable Pdfium library can be loaded.
     fn default() -> Self {
-        Pdfium::new(Pdfium::bind_to_system_library().unwrap())
+        Pdfium::new(Pdfium::bind_to_system_library().expect("No Pdfium library found"))
     }
 }
 
