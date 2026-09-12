@@ -29,6 +29,13 @@ pub(crate) mod static_bindings;
 #[cfg(target_arch = "wasm32")]
 pub(crate) mod wasm_bindings;
 
+// These implementations are all single-threaded (because Pdfium itself is single-threaded).
+// Any of them can be wrapped by thread_safe::ThreadSafePdfiumBindings to
+// create a thread-safe architecture-specific implementation of the PdfiumLibraryBindings trait.
+
+#[cfg(feature = "thread_safe")]
+pub(crate) mod thread_safe;
+
 // The following dummy declarations are used only when running cargo doc.
 // They allow documentation of any target-specific functionality to be included
 // in documentation generated on a different target.
@@ -150,7 +157,7 @@ use std::ffi::CString;
 ///   to WASM. Use the globally-available [PdfiumLibraryBindings::FPDFBitmap_GetBuffer_as_vec]
 ///   or the WASM-specific [PdfiumLibraryBindings::FPDFBitmap_GetBuffer_as_array] functions instead.
 #[allow(drop_bounds)] // We want every bindings implementation to also provide a Drop implementation.
-pub trait PdfiumLibraryBindings: Send + Sync + Drop {
+pub trait PdfiumLibraryBindings: Send + Sync {
     /// Returns the canonical C-style boolean integer value 1, indicating `true`.
     #[inline]
     #[allow(non_snake_case)]
