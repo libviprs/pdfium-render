@@ -1601,6 +1601,9 @@ mod tests {
             }
         }
 
+        Ok(())
+    }
+
     /// Per-pixel mean absolute difference across all RGBA channels. Returns
     /// infinity on a length mismatch so a dimension difference fails an
     /// equality check and passes a divergence check.

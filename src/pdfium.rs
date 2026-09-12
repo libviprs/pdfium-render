@@ -208,23 +208,6 @@ pub(crate) trait PdfiumLibraryBindingsAccessor<'a> {
     }
 }
 
-/// The trait bound for a reader passed to [Pdfium::load_pdf_from_reader].
-///
-/// Under the `thread_safe` feature the resulting [PdfDocument] is `Send` and
-/// Pdfium may invoke the reader's callback from whichever thread later triggers a
-/// lazy read, so the reader must also be `Send`. Without `thread_safe`, only
-/// [Read] and [Seek] are required. This is a blanket trait implemented for every
-/// type that satisfies the underlying bounds; you never name it directly.
-#[cfg(all(not(target_arch = "wasm32"), feature = "thread_safe"))]
-pub trait PdfiumReader: Read + Seek + Send {}
-#[cfg(all(not(target_arch = "wasm32"), feature = "thread_safe"))]
-impl<R: Read + Seek + Send> PdfiumReader for R {}
-
-#[cfg(all(not(target_arch = "wasm32"), not(feature = "thread_safe")))]
-pub trait PdfiumReader: Read + Seek {}
-#[cfg(all(not(target_arch = "wasm32"), not(feature = "thread_safe")))]
-impl<R: Read + Seek> PdfiumReader for R {}
-
 /// A high-level idiomatic Rust wrapper around Pdfium, the C++ PDF library used by
 /// the Google Chromium project.
 pub struct Pdfium {

@@ -39,19 +39,6 @@ impl PdfPageIndexCache {
         self.pages_by_index.get(&(document, page))
     }
 
-    /// Returns the number of `pages_by_index` entries currently cached for the given raw document
-    /// handle. The [PAGE_INDEX_CACHE] is process-global and shared by every open document, so
-    /// counting entries scoped to a single document is the only way a test can assert on cache
-    /// contents without depending on what other, concurrently running tests happen to have cached.
-    #[cfg(test)]
-    #[inline]
-    fn count_for_document(&self, document: FPDF_DOCUMENT) -> usize {
-        self.pages_by_index
-            .keys()
-            .filter(|(cached_document, _)| *cached_document == document)
-            .count()
-    }
-
     /// Sets the currently cached properties for the given raw document and page handles.
     #[inline]
     fn set(&mut self, document: FPDF_DOCUMENT, page: FPDF_PAGE, props: PdfPageCachedProperties) {
@@ -1399,7 +1386,7 @@ mod tests {
         PdfPageIndexCache::remove_index_for_page(document, page);
 
         assert_eq!(
-            PdfPageIndexCache::lock().count_for_document(document),
+            PdfPageIndexCache::count_for_document(document),
             0,
             "the page entry itself should be gone"
         );
@@ -1501,7 +1488,7 @@ mod tests {
                 .create_page_at_start(PdfPagePaperSize::a4())
                 .expect("could not create a page through the poisoned cache mutex");
 
-            let count = PdfPageIndexCache::lock().count_for_document(document.handle());
+            let count = PdfPageIndexCache::count_for_document(document.handle());
 
             assert_eq!(
                 count, 1,
@@ -1509,7 +1496,7 @@ mod tests {
             );
         }
 
-        let count = PdfPageIndexCache::lock().count_for_document(document.handle());
+        let count = PdfPageIndexCache::count_for_document(document.handle());
 
         assert_eq!(
             count, 0,
