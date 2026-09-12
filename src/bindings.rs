@@ -131,6 +131,31 @@ use std::ffi::{
 ))]
 use std::ffi::CString;
 
+/// Computes the length in bytes of a Pdfium bitmap's buffer from its stride and
+/// height.
+///
+/// Pdfium reports both as `c_int`, so the obvious `stride * height` is an `i32`
+/// product and a large raster overflows it before anything widens the result. A
+/// 48"x36" drawing rendered at 600 DPI has a stride of 115200 and a height of
+/// 21600, needing 2_488_320_000 bytes, past `i32::MAX`. The product wraps to
+/// -1_806_647_296, sign-extends through `as usize` to about 1.8e19, and that
+/// length reaches `slice::from_raw_parts` over a 2.3 GB allocation. Other shapes
+/// wrap to a small positive value instead and silently truncate the raster.
+///
+/// The multiply happens in `usize` here, so it cannot wrap on a 64-bit target
+/// (the product of two non-negative `i32`s is at most about 4.6e18), and
+/// saturates rather than wrapping on a 32-bit one. A non-positive stride or
+/// height is Pdfium's error and empty-bitmap signal, and yields zero so callers
+/// never build a slice over an invalid span.
+#[cfg(not(target_arch = "wasm32"))]
+fn bitmap_buffer_len(stride: c_int, height: c_int) -> usize {
+    if stride <= 0 || height <= 0 {
+        return 0;
+    }
+
+    (stride as usize).saturating_mul(height as usize)
+}
+
 /// Platform-independent function bindings to an external Pdfium library.
 /// On most platforms this will be an external shared library loaded dynamically
 /// at runtime, either bundled alongside your compiled Rust application or provided as a system
@@ -3185,14 +3210,28 @@ pub trait PdfiumLibraryBindings: Send + Sync {
     /// will be unchanged and a value of `false` will be returned.
     #[allow(non_snake_case)]
     unsafe fn FPDFBitmap_SetBuffer(&self, bitmap: FPDF_BITMAP, buffer: &[u8]) -> bool {
-        let buffer_length =
-            (self.FPDFBitmap_GetStride(bitmap) * self.FPDFBitmap_GetHeight(bitmap)) as usize;
+        let buffer_length = bitmap_buffer_len(
+            self.FPDFBitmap_GetStride(bitmap),
+            self.FPDFBitmap_GetHeight(bitmap),
+        );
 
         if buffer.len() != buffer_length {
             return false;
         }
 
+        if buffer_length == 0 {
+            // There is nothing to copy, and `from_raw_parts_mut` requires a
+            // non-null, aligned pointer even for a zero-length slice. Returning
+            // true keeps the documented contract, which is that a buffer whose
+            // length matches the bitmap's is applied.
+            return true;
+        }
+
         let buffer_start = self.FPDFBitmap_GetBuffer(bitmap);
+
+        if buffer_start.is_null() {
+            return false;
+        }
 
         let destination =
             unsafe { std::slice::from_raw_parts_mut(buffer_start as *mut u8, buffer_length) };
@@ -3229,9 +3268,19 @@ pub trait PdfiumLibraryBindings: Send + Sync {
     unsafe fn FPDFBitmap_GetBuffer_as_slice(&self, bitmap: FPDF_BITMAP) -> &[u8] {
         let buffer = self.FPDFBitmap_GetBuffer(bitmap);
 
-        let len = self.FPDFBitmap_GetStride(bitmap) * self.FPDFBitmap_GetHeight(bitmap);
+        let len = bitmap_buffer_len(
+            self.FPDFBitmap_GetStride(bitmap),
+            self.FPDFBitmap_GetHeight(bitmap),
+        );
 
-        unsafe { std::slice::from_raw_parts(buffer as *const u8, len as usize) }
+        if len == 0 || buffer.is_null() {
+            // `from_raw_parts` requires a non-null, aligned pointer even for a
+            // zero-length slice, so hand back a genuinely empty one rather than
+            // building one over a null or invalid span.
+            return &[];
+        }
+
+        unsafe { std::slice::from_raw_parts(buffer as *const u8, len) }
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -10278,5 +10327,63 @@ mod tests {
         assert!(pdfium.bindings().is_true(-1));
 
         Ok(())
+    }
+
+    /// The overflow this guards is not hypothetical: it is the arithmetic that
+    /// `stride * height` used to perform before anything widened the result.
+    /// The first assertion is the positive control, since a test that picked a
+    /// shape which happens to fit in an `i32` would pass against the very bug
+    /// it is named for.
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn bitmap_buffer_len_does_not_overflow_i32() {
+        use crate::bindings::bitmap_buffer_len;
+        use std::os::raw::c_int;
+
+        // A 48"x36" drawing rendered at 600 DPI: 28800 px wide at 4 bytes per
+        // pixel gives a stride of 115200, with a height of 21600.
+        let stride: c_int = 115_200;
+        let height: c_int = 21_600;
+
+        assert!(
+            stride.checked_mul(height).is_none(),
+            "this shape must actually overflow c_int, or the test cannot fail"
+        );
+
+        assert_eq!(bitmap_buffer_len(stride, height), 2_488_320_000usize);
+    }
+
+    /// A wrap to a small positive value is the quiet half of the same bug: no
+    /// crash, just a silently truncated raster.
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn bitmap_buffer_len_survives_a_product_that_wraps_to_a_small_value() {
+        use crate::bindings::bitmap_buffer_len;
+        use std::os::raw::c_int;
+
+        let stride: c_int = 65_536;
+        let height: c_int = 32_768;
+
+        assert!(stride.checked_mul(height).is_none());
+        assert_eq!(bitmap_buffer_len(stride, height), 2_147_483_648usize);
+    }
+
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn bitmap_buffer_len_guards_non_positive_stride_and_height() {
+        use crate::bindings::bitmap_buffer_len;
+        use std::os::raw::c_int;
+
+        // A non-positive stride or height is Pdfium's error and empty-bitmap
+        // signal, so it has to yield a zero-length buffer rather than something
+        // a caller would build a slice over.
+        assert_eq!(bitmap_buffer_len(0, 100), 0);
+        assert_eq!(bitmap_buffer_len(100, 0), 0);
+        assert_eq!(bitmap_buffer_len(-1, 100), 0);
+        assert_eq!(bitmap_buffer_len(100, -1), 0);
+        assert_eq!(bitmap_buffer_len(c_int::MIN, c_int::MIN), 0);
+
+        // An ordinary bitmap still gets its exact length.
+        assert_eq!(bitmap_buffer_len(400, 300), 120_000);
     }
 }
