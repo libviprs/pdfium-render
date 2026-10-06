@@ -11,6 +11,9 @@ mod bindgen {
     #[cfg(feature = "pdfium_future")]
     include!("bindgen/pdfium_future.rs");
 
+    #[cfg(feature = "pdfium_8085")]
+    include!("bindgen/pdfium_8085.rs");
+
     #[cfg(feature = "pdfium_7881")]
     include!("bindgen/pdfium_7881.rs");
 
@@ -309,6 +312,53 @@ mod tests {
 
             println!("{} has {} pages", path, page_count);
         }
+
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(all(feature = "pdfium_8085", not(feature = "static")))]
+    fn test_pdfium_8085_renders_a_page() -> Result<(), PdfiumError> {
+        // Binds to a Pdfium 8085 library, renders a page, and calls one of the functions that
+        // only exists in the 8085 API. The dynamic bindings resolve every symbol for the selected
+        // API version when the library is loaded, so a library older than 8085 fails before
+        // reaching this point.
+
+        use crate::bindings::version::PdfiumApiVersion;
+        use crate::bindings::PdfiumLibraryBindings;
+
+        let pdfium = test_bind_to_pdfium();
+
+        assert_eq!(PdfiumApiVersion::current(), PdfiumApiVersion::V8085);
+
+        let document = pdfium.load_pdf_from_file("test/export-test.pdf", None)?;
+        let page = document.pages().get(0)?;
+
+        let bitmap = page.render_with_config(&PdfRenderConfig::new().set_target_width(300))?;
+
+        assert_eq!(bitmap.width(), 300);
+        assert!(bitmap.height() > 0);
+
+        let bytes = bitmap.as_raw_bytes();
+
+        assert!(!bytes.is_empty());
+        assert!(
+            bytes.iter().any(|b| *b != bytes[0]),
+            "the rendered page should not be one flat colour"
+        );
+
+        let toc = pdfium.load_pdf_from_file("test/test-toc.pdf", None)?;
+        let bindings = pdfium.bindings();
+
+        let first = unsafe { bindings.FPDFBookmark_GetFirstChild(toc.handle(), std::ptr::null_mut()) };
+
+        assert!(!first.is_null());
+
+        // The style flags are a two-bit field (italic and bold).
+
+        let style = unsafe { bindings.FPDFBookmark_GetStyle(first) };
+
+        assert!((0..=3).contains(&style));
 
         Ok(())
     }

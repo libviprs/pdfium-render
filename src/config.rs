@@ -17,6 +17,7 @@ use std::os::raw::c_void;
 
 #[cfg(any(
     feature = "pdfium_future",
+    feature = "pdfium_8085",
     feature = "pdfium_7881",
     feature = "pdfium_7763",
 ))]
@@ -41,6 +42,7 @@ pub struct PdfiumLibraryConfig {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
     ))]
@@ -66,6 +68,7 @@ impl PdfiumLibraryConfig {
 
             #[cfg(any(
                 feature = "pdfium_future",
+                feature = "pdfium_8085",
                 feature = "pdfium_7881",
                 feature = "pdfium_7763",
             ))]
@@ -195,6 +198,7 @@ impl PdfiumLibraryConfig {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
     ))]
@@ -207,6 +211,7 @@ impl PdfiumLibraryConfig {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
     ))]
@@ -246,10 +251,20 @@ impl PdfiumLibraryConfig {
 
             #[cfg(any(
                 feature = "pdfium_future",
+                feature = "pdfium_8085",
                 feature = "pdfium_7881",
                 feature = "pdfium_7763",
             ))]
             m_FontLibraryType: self.font_library_type,
+
+            // Pdfium 8085 added two fields to the end of FPDF_LIBRARY_CONFIG (Brotli filter
+            // support and a per-document V8 isolate). We pass `version: 2`, so Pdfium never reads
+            // them, but the struct literal still has to name them. Leave both off, which is also
+            // what Pdfium assumes for a version 2 config.
+            #[cfg(feature = "pdfium_8085")]
+            m_BrotliEnabled: 0,
+            #[cfg(feature = "pdfium_8085")]
+            m_IsolatePerDocument: 0,
         };
 
         config

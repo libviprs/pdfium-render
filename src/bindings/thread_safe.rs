@@ -21,6 +21,7 @@ use crate::bindgen::{
 
 #[cfg(any(
     feature = "pdfium_future",
+    feature = "pdfium_8085",
     feature = "pdfium_7881",
     feature = "pdfium_7763",
     feature = "pdfium_7543",
@@ -53,6 +54,9 @@ pub use crate::bindgen::FPDF_SKIA_CANVAS;
 
 #[cfg(feature = "pdfium_enable_xfa")]
 pub use crate::bindgen::{FPDF_BSTR, FPDF_RESULT};
+
+#[cfg(feature = "pdfium_8085")]
+use crate::bindgen::FPDF_TEXT_DIRECTION;
 
 use crate::bindings::PdfiumLibraryBindings;
 use once_cell::sync::Lazy;
@@ -382,6 +386,7 @@ impl<T: PdfiumLibraryBindings> PdfiumLibraryBindings for ThreadSafePdfiumBinding
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -774,6 +779,7 @@ impl<T: PdfiumLibraryBindings> PdfiumLibraryBindings for ThreadSafePdfiumBinding
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763"
     ))]
@@ -896,6 +902,7 @@ impl<T: PdfiumLibraryBindings> PdfiumLibraryBindings for ThreadSafePdfiumBinding
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -992,6 +999,7 @@ impl<T: PdfiumLibraryBindings> PdfiumLibraryBindings for ThreadSafePdfiumBinding
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -1041,6 +1049,7 @@ impl<T: PdfiumLibraryBindings> PdfiumLibraryBindings for ThreadSafePdfiumBinding
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -1090,6 +1099,7 @@ impl<T: PdfiumLibraryBindings> PdfiumLibraryBindings for ThreadSafePdfiumBinding
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -1140,6 +1150,7 @@ impl<T: PdfiumLibraryBindings> PdfiumLibraryBindings for ThreadSafePdfiumBinding
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -1198,6 +1209,7 @@ impl<T: PdfiumLibraryBindings> PdfiumLibraryBindings for ThreadSafePdfiumBinding
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -1260,6 +1272,7 @@ impl<T: PdfiumLibraryBindings> PdfiumLibraryBindings for ThreadSafePdfiumBinding
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -1289,6 +1302,7 @@ impl<T: PdfiumLibraryBindings> PdfiumLibraryBindings for ThreadSafePdfiumBinding
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -1315,6 +1329,7 @@ impl<T: PdfiumLibraryBindings> PdfiumLibraryBindings for ThreadSafePdfiumBinding
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -1383,6 +1398,7 @@ impl<T: PdfiumLibraryBindings> PdfiumLibraryBindings for ThreadSafePdfiumBinding
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -1813,6 +1829,7 @@ impl<T: PdfiumLibraryBindings> PdfiumLibraryBindings for ThreadSafePdfiumBinding
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -2365,6 +2382,7 @@ impl<T: PdfiumLibraryBindings> PdfiumLibraryBindings for ThreadSafePdfiumBinding
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -2480,7 +2498,11 @@ impl<T: PdfiumLibraryBindings> PdfiumLibraryBindings for ThreadSafePdfiumBinding
         self.bindings.FPDFAnnot_GetFontSize(form, annot, value)
     }
 
-    #[cfg(any(feature = "pdfium_future", feature = "pdfium_7881"))]
+    #[cfg(any(
+        feature = "pdfium_future",
+        feature = "pdfium_8085",
+        feature = "pdfium_7881"
+    ))]
     #[allow(non_snake_case)]
     unsafe fn FPDFTextObj_SetFontSize(&self, text: FPDF_PAGEOBJECT, size: c_float) -> FPDF_BOOL {
         let _lock = PdfiumThreadMarshall::lock();
@@ -2489,6 +2511,7 @@ impl<T: PdfiumLibraryBindings> PdfiumLibraryBindings for ThreadSafePdfiumBinding
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -2510,6 +2533,7 @@ impl<T: PdfiumLibraryBindings> PdfiumLibraryBindings for ThreadSafePdfiumBinding
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -2630,6 +2654,7 @@ impl<T: PdfiumLibraryBindings> PdfiumLibraryBindings for ThreadSafePdfiumBinding
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -2655,6 +2680,7 @@ impl<T: PdfiumLibraryBindings> PdfiumLibraryBindings for ThreadSafePdfiumBinding
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -3211,6 +3237,7 @@ impl<T: PdfiumLibraryBindings> PdfiumLibraryBindings for ThreadSafePdfiumBinding
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -3232,6 +3259,7 @@ impl<T: PdfiumLibraryBindings> PdfiumLibraryBindings for ThreadSafePdfiumBinding
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -3668,6 +3696,7 @@ impl<T: PdfiumLibraryBindings> PdfiumLibraryBindings for ThreadSafePdfiumBinding
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -3699,6 +3728,7 @@ impl<T: PdfiumLibraryBindings> PdfiumLibraryBindings for ThreadSafePdfiumBinding
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -4120,6 +4150,7 @@ impl<T: PdfiumLibraryBindings> PdfiumLibraryBindings for ThreadSafePdfiumBinding
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -4314,7 +4345,11 @@ impl<T: PdfiumLibraryBindings> PdfiumLibraryBindings for ThreadSafePdfiumBinding
             .FPDFText_SetCharcodes(text_object, charcodes, count)
     }
 
-    #[cfg(any(feature = "pdfium_future", feature = "pdfium_7881"))]
+    #[cfg(any(
+        feature = "pdfium_future",
+        feature = "pdfium_8085",
+        feature = "pdfium_7881"
+    ))]
     #[allow(non_snake_case)]
     unsafe fn FPDFText_SetPositions(
         &self,
@@ -4349,6 +4384,7 @@ impl<T: PdfiumLibraryBindings> PdfiumLibraryBindings for ThreadSafePdfiumBinding
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -4388,7 +4424,11 @@ impl<T: PdfiumLibraryBindings> PdfiumLibraryBindings for ThreadSafePdfiumBinding
         )
     }
 
-    #[cfg(any(feature = "pdfium_future", feature = "pdfium_7881"))]
+    #[cfg(any(
+        feature = "pdfium_future",
+        feature = "pdfium_8085",
+        feature = "pdfium_7881"
+    ))]
     #[allow(non_snake_case)]
     unsafe fn FPDFPage_InsertObject(
         &self,
@@ -4432,6 +4472,7 @@ impl<T: PdfiumLibraryBindings> PdfiumLibraryBindings for ThreadSafePdfiumBinding
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -4497,6 +4538,7 @@ impl<T: PdfiumLibraryBindings> PdfiumLibraryBindings for ThreadSafePdfiumBinding
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -4518,6 +4560,7 @@ impl<T: PdfiumLibraryBindings> PdfiumLibraryBindings for ThreadSafePdfiumBinding
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -4555,6 +4598,7 @@ impl<T: PdfiumLibraryBindings> PdfiumLibraryBindings for ThreadSafePdfiumBinding
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -4608,6 +4652,7 @@ impl<T: PdfiumLibraryBindings> PdfiumLibraryBindings for ThreadSafePdfiumBinding
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -4655,7 +4700,11 @@ impl<T: PdfiumLibraryBindings> PdfiumLibraryBindings for ThreadSafePdfiumBinding
         self.bindings.FPDFPageObj_AddMark(page_object, name)
     }
 
-    #[cfg(any(feature = "pdfium_future", feature = "pdfium_7881"))]
+    #[cfg(any(
+        feature = "pdfium_future",
+        feature = "pdfium_8085",
+        feature = "pdfium_7881"
+    ))]
     #[allow(non_snake_case)]
     unsafe fn FPDFPageObj_AddExistingMark(
         &self,
@@ -4679,6 +4728,7 @@ impl<T: PdfiumLibraryBindings> PdfiumLibraryBindings for ThreadSafePdfiumBinding
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -4741,6 +4791,7 @@ impl<T: PdfiumLibraryBindings> PdfiumLibraryBindings for ThreadSafePdfiumBinding
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -4821,6 +4872,7 @@ impl<T: PdfiumLibraryBindings> PdfiumLibraryBindings for ThreadSafePdfiumBinding
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -4840,6 +4892,7 @@ impl<T: PdfiumLibraryBindings> PdfiumLibraryBindings for ThreadSafePdfiumBinding
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -4897,6 +4950,7 @@ impl<T: PdfiumLibraryBindings> PdfiumLibraryBindings for ThreadSafePdfiumBinding
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -4968,6 +5022,7 @@ impl<T: PdfiumLibraryBindings> PdfiumLibraryBindings for ThreadSafePdfiumBinding
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -5003,6 +5058,7 @@ impl<T: PdfiumLibraryBindings> PdfiumLibraryBindings for ThreadSafePdfiumBinding
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -5231,6 +5287,7 @@ impl<T: PdfiumLibraryBindings> PdfiumLibraryBindings for ThreadSafePdfiumBinding
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -5525,6 +5582,7 @@ impl<T: PdfiumLibraryBindings> PdfiumLibraryBindings for ThreadSafePdfiumBinding
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -5549,6 +5607,7 @@ impl<T: PdfiumLibraryBindings> PdfiumLibraryBindings for ThreadSafePdfiumBinding
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -5925,6 +5984,7 @@ impl<T: PdfiumLibraryBindings> PdfiumLibraryBindings for ThreadSafePdfiumBinding
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -5951,6 +6011,7 @@ impl<T: PdfiumLibraryBindings> PdfiumLibraryBindings for ThreadSafePdfiumBinding
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763"
     ))]
@@ -5967,6 +6028,7 @@ impl<T: PdfiumLibraryBindings> PdfiumLibraryBindings for ThreadSafePdfiumBinding
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
     ))]
@@ -5997,5 +6059,152 @@ impl<T: PdfiumLibraryBindings> PdfiumLibraryBindings for ThreadSafePdfiumBinding
     ) -> FPDF_BOOL {
         let _lock = PdfiumThreadMarshall::lock();
         self.bindings.FPDFCatalog_SetLanguage(document, language)
+    }
+    #[cfg(feature = "pdfium_8085")]
+    #[inline]
+    #[allow(non_snake_case)]
+    unsafe fn FPDFAttachment_SetDescription(
+        &self,
+        attachment: FPDF_ATTACHMENT,
+        value: FPDF_WIDESTRING,
+    ) -> FPDF_BOOL {
+        let _lock = PdfiumThreadMarshall::lock();
+        self.bindings
+            .FPDFAttachment_SetDescription(attachment, value)
+    }
+
+    #[cfg(feature = "pdfium_8085")]
+    #[inline]
+    #[allow(non_snake_case)]
+    unsafe fn FPDFAttachment_GetDescription(
+        &self,
+        attachment: FPDF_ATTACHMENT,
+        buffer: *mut FPDF_WCHAR,
+        buflen: c_ulong,
+    ) -> c_ulong {
+        let _lock = PdfiumThreadMarshall::lock();
+        self.bindings
+            .FPDFAttachment_GetDescription(attachment, buffer, buflen)
+    }
+
+    #[cfg(feature = "pdfium_8085")]
+    #[inline]
+    #[allow(non_snake_case)]
+    unsafe fn FPDFAttachment_GetAFRelationship(
+        &self,
+        attachment: FPDF_ATTACHMENT,
+        buffer: *mut FPDF_WCHAR,
+        buflen: c_ulong,
+    ) -> c_ulong {
+        let _lock = PdfiumThreadMarshall::lock();
+        self.bindings
+            .FPDFAttachment_GetAFRelationship(attachment, buffer, buflen)
+    }
+
+    #[cfg(feature = "pdfium_8085")]
+    #[inline]
+    #[allow(non_snake_case)]
+    unsafe fn FPDFBookmark_GetColor(
+        &self,
+        bookmark: FPDF_BOOKMARK,
+        R: *mut c_float,
+        G: *mut c_float,
+        B: *mut c_float,
+    ) -> FPDF_BOOL {
+        let _lock = PdfiumThreadMarshall::lock();
+        self.bindings.FPDFBookmark_GetColor(bookmark, R, G, B)
+    }
+
+    #[cfg(feature = "pdfium_8085")]
+    #[inline]
+    #[allow(non_snake_case)]
+    unsafe fn FPDFBookmark_GetStyle(&self, bookmark: FPDF_BOOKMARK) -> c_int {
+        let _lock = PdfiumThreadMarshall::lock();
+        self.bindings.FPDFBookmark_GetStyle(bookmark)
+    }
+
+    #[cfg(feature = "pdfium_8085")]
+    #[inline]
+    #[allow(non_snake_case)]
+    unsafe fn FPDFPageObj_GetRenderedStrokePattern(
+        &self,
+        document: FPDF_DOCUMENT,
+        page_object: FPDF_PAGEOBJECT,
+    ) -> FPDF_BITMAP {
+        let _lock = PdfiumThreadMarshall::lock();
+        self.bindings
+            .FPDFPageObj_GetRenderedStrokePattern(document, page_object)
+    }
+
+    #[cfg(feature = "pdfium_8085")]
+    #[inline]
+    #[allow(non_snake_case)]
+    unsafe fn FPDFPageObj_GetRenderedFillPattern(
+        &self,
+        document: FPDF_DOCUMENT,
+        page_object: FPDF_PAGEOBJECT,
+    ) -> FPDF_BITMAP {
+        let _lock = PdfiumThreadMarshall::lock();
+        self.bindings
+            .FPDFPageObj_GetRenderedFillPattern(document, page_object)
+    }
+
+    #[cfg(feature = "pdfium_8085")]
+    #[inline]
+    #[allow(non_snake_case)]
+    unsafe fn FPDFPath_GetBezierControlPoints(
+        &self,
+        path: FPDF_PAGEOBJECT,
+        index: usize,
+        first_control_point: *mut FS_POINTF,
+        second_control_point: *mut FS_POINTF,
+    ) -> FPDF_BOOL {
+        let _lock = PdfiumThreadMarshall::lock();
+        self.bindings.FPDFPath_GetBezierControlPoints(
+            path,
+            index,
+            first_control_point,
+            second_control_point,
+        )
+    }
+
+    #[cfg(feature = "pdfium_8085")]
+    #[inline]
+    #[allow(non_snake_case)]
+    unsafe fn FORM_GetTextDirection(
+        &self,
+        handle: FPDF_FORMHANDLE,
+        annot: FPDF_ANNOTATION,
+    ) -> FPDF_TEXT_DIRECTION {
+        let _lock = PdfiumThreadMarshall::lock();
+        self.bindings.FORM_GetTextDirection(handle, annot)
+    }
+
+    #[cfg(feature = "pdfium_8085")]
+    #[inline]
+    #[allow(non_snake_case)]
+    unsafe fn FORM_SetTextDirection(
+        &self,
+        handle: FPDF_FORMHANDLE,
+        annot: FPDF_ANNOTATION,
+        direction: FPDF_TEXT_DIRECTION,
+    ) -> FPDF_BOOL {
+        let _lock = PdfiumThreadMarshall::lock();
+        self.bindings
+            .FORM_SetTextDirection(handle, annot, direction)
+    }
+
+    #[cfg(feature = "pdfium_8085")]
+    #[inline]
+    #[allow(non_snake_case)]
+    unsafe fn FPDF_StructElement_GetRawType(
+        &self,
+        struct_element: FPDF_STRUCTELEMENT,
+        buffer: *mut FPDF_WCHAR,
+        buflen: usize,
+    ) -> c_ulong {
+        let _lock = PdfiumThreadMarshall::lock();
+        self.bindings
+            .FPDF_StructElement_GetRawType(struct_element, buffer, buflen)
     }
 }

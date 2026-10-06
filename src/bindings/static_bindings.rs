@@ -14,6 +14,7 @@ use crate::bindgen::{
 
 #[cfg(any(
     feature = "pdfium_future",
+    feature = "pdfium_8085",
     feature = "pdfium_7881",
     feature = "pdfium_7763",
     feature = "pdfium_7543",
@@ -46,6 +47,9 @@ use crate::bindgen::FPDF_SKIA_CANVAS;
 
 #[cfg(feature = "pdfium_enable_xfa")]
 use crate::bindgen::{FPDF_BSTR, FPDF_RESULT};
+
+#[cfg(feature = "pdfium_8085")]
+use crate::bindgen::FPDF_TEXT_DIRECTION;
 
 use crate::bindings::PdfiumLibraryBindings;
 use std::ffi::CString;
@@ -324,6 +328,7 @@ impl PdfiumLibraryBindings for StaticPdfiumBindings {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -684,6 +689,7 @@ impl PdfiumLibraryBindings for StaticPdfiumBindings {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763"
     ))]
@@ -799,6 +805,7 @@ impl PdfiumLibraryBindings for StaticPdfiumBindings {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -889,6 +896,7 @@ impl PdfiumLibraryBindings for StaticPdfiumBindings {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -942,6 +950,7 @@ impl PdfiumLibraryBindings for StaticPdfiumBindings {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -997,6 +1006,7 @@ impl PdfiumLibraryBindings for StaticPdfiumBindings {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -1053,6 +1063,7 @@ impl PdfiumLibraryBindings for StaticPdfiumBindings {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -1113,6 +1124,7 @@ impl PdfiumLibraryBindings for StaticPdfiumBindings {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -1175,6 +1187,7 @@ impl PdfiumLibraryBindings for StaticPdfiumBindings {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -1203,6 +1216,7 @@ impl PdfiumLibraryBindings for StaticPdfiumBindings {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -1228,6 +1242,7 @@ impl PdfiumLibraryBindings for StaticPdfiumBindings {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -1291,6 +1306,7 @@ impl PdfiumLibraryBindings for StaticPdfiumBindings {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -1687,6 +1703,7 @@ impl PdfiumLibraryBindings for StaticPdfiumBindings {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -2185,6 +2202,7 @@ impl PdfiumLibraryBindings for StaticPdfiumBindings {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -2293,6 +2311,7 @@ impl PdfiumLibraryBindings for StaticPdfiumBindings {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -2313,6 +2332,7 @@ impl PdfiumLibraryBindings for StaticPdfiumBindings {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -2425,6 +2445,7 @@ impl PdfiumLibraryBindings for StaticPdfiumBindings {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -2449,6 +2470,7 @@ impl PdfiumLibraryBindings for StaticPdfiumBindings {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -2956,6 +2978,7 @@ impl PdfiumLibraryBindings for StaticPdfiumBindings {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -2976,6 +2999,7 @@ impl PdfiumLibraryBindings for StaticPdfiumBindings {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -3364,6 +3388,7 @@ impl PdfiumLibraryBindings for StaticPdfiumBindings {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -3393,6 +3418,7 @@ impl PdfiumLibraryBindings for StaticPdfiumBindings {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -3780,6 +3806,7 @@ impl PdfiumLibraryBindings for StaticPdfiumBindings {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -3863,7 +3890,11 @@ impl PdfiumLibraryBindings for StaticPdfiumBindings {
         crate::bindgen::FPDFTextObj_GetFontSize(text, size)
     }
 
-    #[cfg(any(feature = "pdfium_future", feature = "pdfium_7881"))]
+    #[cfg(any(
+        feature = "pdfium_future",
+        feature = "pdfium_8085",
+        feature = "pdfium_7881"
+    ))]
     #[inline]
     #[allow(non_snake_case)]
     unsafe fn FPDFTextObj_SetFontSize(&self, text: FPDF_PAGEOBJECT, size: c_float) -> FPDF_BOOL {
@@ -3965,7 +3996,11 @@ impl PdfiumLibraryBindings for StaticPdfiumBindings {
         crate::bindgen::FPDFText_SetCharcodes(text_object, charcodes, count)
     }
 
-    #[cfg(any(feature = "pdfium_future", feature = "pdfium_7881"))]
+    #[cfg(any(
+        feature = "pdfium_future",
+        feature = "pdfium_8085",
+        feature = "pdfium_7881"
+    ))]
     #[inline]
     #[allow(non_snake_case)]
     unsafe fn FPDFText_SetPositions(
@@ -4000,6 +4035,7 @@ impl PdfiumLibraryBindings for StaticPdfiumBindings {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -4040,7 +4076,11 @@ impl PdfiumLibraryBindings for StaticPdfiumBindings {
         )
     }
 
-    #[cfg(any(feature = "pdfium_future", feature = "pdfium_7881"))]
+    #[cfg(any(
+        feature = "pdfium_future",
+        feature = "pdfium_8085",
+        feature = "pdfium_7881"
+    ))]
     #[inline]
     #[allow(non_snake_case)]
     unsafe fn FPDFPage_InsertObject(
@@ -4084,6 +4124,7 @@ impl PdfiumLibraryBindings for StaticPdfiumBindings {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -4142,6 +4183,7 @@ impl PdfiumLibraryBindings for StaticPdfiumBindings {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -4162,6 +4204,7 @@ impl PdfiumLibraryBindings for StaticPdfiumBindings {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -4197,6 +4240,7 @@ impl PdfiumLibraryBindings for StaticPdfiumBindings {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -4246,6 +4290,7 @@ impl PdfiumLibraryBindings for StaticPdfiumBindings {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -4291,7 +4336,11 @@ impl PdfiumLibraryBindings for StaticPdfiumBindings {
         crate::bindgen::FPDFPageObj_AddMark(page_object, c_name.as_ptr())
     }
 
-    #[cfg(any(feature = "pdfium_future", feature = "pdfium_7881"))]
+    #[cfg(any(
+        feature = "pdfium_future",
+        feature = "pdfium_8085",
+        feature = "pdfium_7881"
+    ))]
     #[inline]
     #[allow(non_snake_case)]
     unsafe fn FPDFPageObj_AddExistingMark(
@@ -4314,6 +4363,7 @@ impl PdfiumLibraryBindings for StaticPdfiumBindings {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -4373,6 +4423,7 @@ impl PdfiumLibraryBindings for StaticPdfiumBindings {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -4453,6 +4504,7 @@ impl PdfiumLibraryBindings for StaticPdfiumBindings {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543"
@@ -4472,6 +4524,7 @@ impl PdfiumLibraryBindings for StaticPdfiumBindings {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -4543,6 +4596,7 @@ impl PdfiumLibraryBindings for StaticPdfiumBindings {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -4635,6 +4689,7 @@ impl PdfiumLibraryBindings for StaticPdfiumBindings {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543"
@@ -4685,6 +4740,7 @@ impl PdfiumLibraryBindings for StaticPdfiumBindings {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -4903,6 +4959,7 @@ impl PdfiumLibraryBindings for StaticPdfiumBindings {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -5173,6 +5230,7 @@ impl PdfiumLibraryBindings for StaticPdfiumBindings {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -5196,6 +5254,7 @@ impl PdfiumLibraryBindings for StaticPdfiumBindings {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -5550,6 +5609,7 @@ impl PdfiumLibraryBindings for StaticPdfiumBindings {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -5574,6 +5634,7 @@ impl PdfiumLibraryBindings for StaticPdfiumBindings {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763"
     ))]
@@ -5590,6 +5651,7 @@ impl PdfiumLibraryBindings for StaticPdfiumBindings {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
     ))]
@@ -5620,5 +5682,134 @@ impl PdfiumLibraryBindings for StaticPdfiumBindings {
         language: FPDF_BYTESTRING,
     ) -> FPDF_BOOL {
         crate::bindgen::FPDFCatalog_SetLanguage(document, language)
+    }
+    #[cfg(feature = "pdfium_8085")]
+    #[inline]
+    #[allow(non_snake_case)]
+    unsafe fn FPDFAttachment_SetDescription(
+        &self,
+        attachment: FPDF_ATTACHMENT,
+        value: FPDF_WIDESTRING,
+    ) -> FPDF_BOOL {
+        crate::bindgen::FPDFAttachment_SetDescription(attachment, value)
+    }
+
+    #[cfg(feature = "pdfium_8085")]
+    #[inline]
+    #[allow(non_snake_case)]
+    unsafe fn FPDFAttachment_GetDescription(
+        &self,
+        attachment: FPDF_ATTACHMENT,
+        buffer: *mut FPDF_WCHAR,
+        buflen: c_ulong,
+    ) -> c_ulong {
+        crate::bindgen::FPDFAttachment_GetDescription(attachment, buffer, buflen)
+    }
+
+    #[cfg(feature = "pdfium_8085")]
+    #[inline]
+    #[allow(non_snake_case)]
+    unsafe fn FPDFAttachment_GetAFRelationship(
+        &self,
+        attachment: FPDF_ATTACHMENT,
+        buffer: *mut FPDF_WCHAR,
+        buflen: c_ulong,
+    ) -> c_ulong {
+        crate::bindgen::FPDFAttachment_GetAFRelationship(attachment, buffer, buflen)
+    }
+
+    #[cfg(feature = "pdfium_8085")]
+    #[inline]
+    #[allow(non_snake_case)]
+    unsafe fn FPDFBookmark_GetColor(
+        &self,
+        bookmark: FPDF_BOOKMARK,
+        R: *mut c_float,
+        G: *mut c_float,
+        B: *mut c_float,
+    ) -> FPDF_BOOL {
+        crate::bindgen::FPDFBookmark_GetColor(bookmark, R, G, B)
+    }
+
+    #[cfg(feature = "pdfium_8085")]
+    #[inline]
+    #[allow(non_snake_case)]
+    unsafe fn FPDFBookmark_GetStyle(&self, bookmark: FPDF_BOOKMARK) -> c_int {
+        crate::bindgen::FPDFBookmark_GetStyle(bookmark)
+    }
+
+    #[cfg(feature = "pdfium_8085")]
+    #[inline]
+    #[allow(non_snake_case)]
+    unsafe fn FPDFPageObj_GetRenderedStrokePattern(
+        &self,
+        document: FPDF_DOCUMENT,
+        page_object: FPDF_PAGEOBJECT,
+    ) -> FPDF_BITMAP {
+        crate::bindgen::FPDFPageObj_GetRenderedStrokePattern(document, page_object)
+    }
+
+    #[cfg(feature = "pdfium_8085")]
+    #[inline]
+    #[allow(non_snake_case)]
+    unsafe fn FPDFPageObj_GetRenderedFillPattern(
+        &self,
+        document: FPDF_DOCUMENT,
+        page_object: FPDF_PAGEOBJECT,
+    ) -> FPDF_BITMAP {
+        crate::bindgen::FPDFPageObj_GetRenderedFillPattern(document, page_object)
+    }
+
+    #[cfg(feature = "pdfium_8085")]
+    #[inline]
+    #[allow(non_snake_case)]
+    unsafe fn FPDFPath_GetBezierControlPoints(
+        &self,
+        path: FPDF_PAGEOBJECT,
+        index: usize,
+        first_control_point: *mut FS_POINTF,
+        second_control_point: *mut FS_POINTF,
+    ) -> FPDF_BOOL {
+        crate::bindgen::FPDFPath_GetBezierControlPoints(
+            path,
+            index,
+            first_control_point,
+            second_control_point,
+        )
+    }
+
+    #[cfg(feature = "pdfium_8085")]
+    #[inline]
+    #[allow(non_snake_case)]
+    unsafe fn FORM_GetTextDirection(
+        &self,
+        handle: FPDF_FORMHANDLE,
+        annot: FPDF_ANNOTATION,
+    ) -> FPDF_TEXT_DIRECTION {
+        crate::bindgen::FORM_GetTextDirection(handle, annot)
+    }
+
+    #[cfg(feature = "pdfium_8085")]
+    #[inline]
+    #[allow(non_snake_case)]
+    unsafe fn FORM_SetTextDirection(
+        &self,
+        handle: FPDF_FORMHANDLE,
+        annot: FPDF_ANNOTATION,
+        direction: FPDF_TEXT_DIRECTION,
+    ) -> FPDF_BOOL {
+        crate::bindgen::FORM_SetTextDirection(handle, annot, direction)
+    }
+
+    #[cfg(feature = "pdfium_8085")]
+    #[inline]
+    #[allow(non_snake_case)]
+    unsafe fn FPDF_StructElement_GetRawType(
+        &self,
+        struct_element: FPDF_STRUCTELEMENT,
+        buffer: *mut FPDF_WCHAR,
+        buflen: usize,
+    ) -> c_ulong {
+        crate::bindgen::FPDF_StructElement_GetRawType(struct_element, buffer, buflen)
     }
 }
