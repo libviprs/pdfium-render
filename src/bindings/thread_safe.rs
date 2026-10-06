@@ -6208,3 +6208,117 @@ impl<T: PdfiumLibraryBindings> PdfiumLibraryBindings for ThreadSafePdfiumBinding
             .FPDF_StructElement_GetRawType(struct_element, buffer, buflen)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Pdfium's C API is not reentrant, so every call that reaches it through the thread-safe
+    // wrapper has to hold the process-wide marshall lock. These tests check that for the whole
+    // wrapper (by reading its own source) and, for a handful of methods, by running them while
+    // another thread holds the lock.
+
+    #[test]
+    fn every_forwarded_method_takes_the_marshall_lock() {
+        let source = include_str!("thread_safe.rs");
+
+        let start = source
+            .find("impl<T: PdfiumLibraryBindings> PdfiumLibraryBindings for ThreadSafePdfiumBindings<T>")
+            .expect("the PdfiumLibraryBindings implementation");
+
+        let end = source.find("#[cfg(test)]").expect("the tests module");
+
+        let mut total = 0;
+        let mut unlocked = Vec::new();
+
+        for method in source[start..end].split("    unsafe fn ").skip(1) {
+            total += 1;
+
+            if !method.contains("PdfiumThreadMarshall::lock()") {
+                unlocked.push(method.split('(').next().unwrap_or("?").to_string());
+            }
+        }
+
+        assert!(total > 400, "expected to find every method, found {}", total);
+
+        assert!(
+            unlocked.is_empty(),
+            "{} of {} methods call into Pdfium without taking the marshall lock: {}",
+            unlocked.len(),
+            total,
+            unlocked.join(", ")
+        );
+    }
+
+    #[cfg(not(feature = "static"))]
+    fn assert_waits_for_marshall_lock(name: &str, call: impl Fn() + Send + Sync) {
+        use std::sync::mpsc::channel;
+        use std::time::Duration;
+
+        let (sender, receiver) = channel();
+        let guard = PdfiumThreadMarshall::lock();
+
+        std::thread::scope(|scope| {
+            scope.spawn(|| {
+                call();
+
+                let _ = sender.send(());
+            });
+
+            let ran_while_locked = receiver.recv_timeout(Duration::from_millis(500)).is_ok();
+
+            // Release the lock so the spawned thread can finish before the scope joins it.
+
+            drop(guard);
+
+            assert!(
+                !ran_while_locked,
+                "{} ran while another thread held the marshall lock",
+                name
+            );
+        });
+    }
+
+    #[test]
+    #[cfg(not(feature = "static"))]
+    fn methods_wait_for_the_marshall_lock() {
+        use crate::pdfium::PdfiumLibraryBindingsAccessor;
+        use crate::utils::test::test_bind_to_pdfium;
+        use std::ptr::null_mut;
+
+        // Every call here passes null handles, which Pdfium rejects up front, so none of them
+        // does any real work if it does get through. FPDF_RenderPageBitmapWithMatrix() is the
+        // call behind every PdfRenderConfig::apply_matrix() render.
+
+        let pdfium = test_bind_to_pdfium();
+        let bindings = pdfium.bindings();
+
+        assert_waits_for_marshall_lock("FPDF_RenderPageBitmapWithMatrix", || unsafe {
+            bindings.FPDF_RenderPageBitmapWithMatrix(
+                null_mut(),
+                null_mut(),
+                std::ptr::null(),
+                std::ptr::null(),
+                0,
+            );
+        });
+
+        assert_waits_for_marshall_lock("FPDFBitmap_FillRect", || unsafe {
+            let _ = bindings.FPDFBitmap_FillRect(null_mut(), 0, 0, 1, 1, 0);
+        });
+
+        assert_waits_for_marshall_lock("FPDF_GetPageSizeByIndexF", || unsafe {
+            let _ = bindings.FPDF_GetPageSizeByIndexF(null_mut(), 0, null_mut());
+        });
+
+        assert_waits_for_marshall_lock("FPDFPage_GetMediaBox", || unsafe {
+            let _ = bindings.FPDFPage_GetMediaBox(
+                null_mut(),
+                null_mut(),
+                null_mut(),
+                null_mut(),
+                null_mut(),
+            );
+        });
+    }
+}
