@@ -10534,4 +10534,56 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    #[cfg(not(any(feature = "static", target_arch = "wasm32")))]
+    fn test_bitmap_buffer_length_over_c_int_max() -> Result<(), PdfiumError> {
+        // Pdfium reports a bitmap's stride and height as c_int. FPDFBitmap_GetBuffer_as_slice()
+        // and FPDFBitmap_SetBuffer() used to multiply the two as c_int, so a bitmap of 2 GiB or
+        // more overflowed the product (a panic in debug builds, a wrapped length in release
+        // builds) before anything widened it to usize.
+        //
+        // The bitmap here wraps a caller-owned buffer, so Pdfium allocates nothing. The buffer is
+        // zero-initialized, which the allocator maps lazily, and the test only reads lengths,
+        // so almost none of the 2 GiB is ever touched.
+
+        use std::os::raw::{c_int, c_void};
+
+        let pdfium = test_bind_to_pdfium();
+        let bindings = pdfium.bindings();
+
+        // 16384 BGRA pixels per row is a stride of 65536 bytes, and 32768 rows of that is
+        // exactly 2^31 bytes, one more than c_int::MAX.
+
+        let (width, height, stride): (c_int, c_int, c_int) = (16_384, 32_768, 65_536);
+        let expected_len: usize = stride as usize * height as usize;
+
+        assert!(stride.checked_mul(height).is_none()); // Positive control: the shape overflows.
+
+        let mut backing = vec![0u8; expected_len];
+
+        unsafe {
+            let bitmap = bindings.FPDFBitmap_CreateEx(
+                width,
+                height,
+                crate::bindgen::FPDFBitmap_BGRA as c_int,
+                backing.as_mut_ptr() as *mut c_void,
+                stride,
+            );
+
+            assert!(!bitmap.is_null());
+            assert_eq!(bindings.FPDFBitmap_GetStride(bitmap), stride);
+            assert_eq!(bindings.FPDFBitmap_GetHeight(bitmap), height);
+
+            assert_eq!(bindings.FPDFBitmap_GetBuffer_as_slice(bitmap).len(), expected_len);
+
+            // A buffer of the wrong length is refused, rather than the length check overflowing.
+
+            assert!(!bindings.FPDFBitmap_SetBuffer(bitmap, &[0u8; 16]));
+
+            bindings.FPDFBitmap_Destroy(bitmap);
+        }
+
+        Ok(())
+    }
 }
