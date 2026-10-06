@@ -78,24 +78,22 @@ impl PdfPageIndexCache {
                 // This page had the maximum page index for this document. Now that it's been removed
                 // from the cache, we need to find the new maximum page index for this document.
 
-                let keys = self.indices_by_page.keys();
+                let maximum = self
+                    .indices_by_page
+                    .keys()
+                    .filter(|(cached_document, _)| *cached_document == document)
+                    .map(|(_, index)| *index)
+                    .max();
 
-                if keys.len() == 0 {
-                    // There's no longer any page indices cached for this document.
-
-                    self.documents_by_maximum_index.remove(&document);
-                } else {
-                    let mut maximum = 0;
-
-                    for (key, index) in keys {
-                        if *key == document {
-                            let index = *index;
-
-                            maximum = index.max(maximum);
-                        }
+                match maximum {
+                    Some(maximum) => {
+                        self.documents_by_maximum_index.insert(document, maximum);
                     }
+                    None => {
+                        // There's no longer any page indices cached for this document.
 
-                    self.documents_by_maximum_index.insert(document, maximum);
+                        self.documents_by_maximum_index.remove(&document);
+                    }
                 }
             }
         }
