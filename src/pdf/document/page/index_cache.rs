@@ -1300,4 +1300,42 @@ mod tests {
 
         assert_eq!(PdfPageIndexCache::count_for_document(document), 0);
     }
+
+    #[test]
+    fn removing_a_documents_last_page_clears_its_maximum_index() {
+        // Synthetic handles, so no native library is needed. Document B keeps an entry in the
+        // shared cache while document A loses its only page; before the fix, A was left behind in
+        // documents_by_maximum_index with a maximum index of 0.
+
+        use crate::bindgen::{FPDF_DOCUMENT, FPDF_PAGE};
+        use crate::pdf::document::page::PdfPageContentRegenerationStrategy;
+
+        let document_a = 0xD000_0000usize as FPDF_DOCUMENT;
+        let document_b = 0xE000_0000usize as FPDF_DOCUMENT;
+
+        let a_page_0 = 0xD000_0001usize as FPDF_PAGE;
+        let b_page_0 = 0xE000_0001usize as FPDF_PAGE;
+
+        for (document, page) in [(document_a, a_page_0), (document_b, b_page_0)] {
+            PdfPageIndexCache::cache_props_for_page(
+                document,
+                page,
+                0,
+                PdfPageContentRegenerationStrategy::AutomaticOnEveryChange,
+            );
+        }
+
+        PdfPageIndexCache::remove_index_for_page(document_a, a_page_0);
+
+        assert_eq!(
+            PdfPageIndexCache::maximum_index_for_document(document_a),
+            None
+        );
+        assert_eq!(
+            PdfPageIndexCache::maximum_index_for_document(document_b),
+            Some(0)
+        );
+
+        PdfPageIndexCache::remove_index_for_page(document_b, b_page_0);
+    }
 }
