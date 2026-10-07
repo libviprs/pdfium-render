@@ -69,6 +69,28 @@ impl<R: Read + Seek> PdfiumReader for R {}
 // implements the PdfiumLibraryBindingsAccessor trait.
 static BINDINGS: OnceCell<Box<dyn PdfiumLibraryBindings>> = OnceCell::new();
 
+/// Held for the length of a sequence of Pdfium calls that has to run without another thread's
+/// calls landing in the middle of it. With the `thread_safe` feature this is the process-wide
+/// Pdfium lock, which is reentrant, so the calls inside the sequence can still take it
+/// themselves. Without the feature it does nothing.
+#[cfg(feature = "thread_safe")]
+pub(crate) type PdfiumOperationLock = crate::bindings::thread_safe::PdfiumThreadLock;
+
+#[cfg(not(feature = "thread_safe"))]
+pub(crate) struct PdfiumOperationLock;
+
+#[cfg(feature = "thread_safe")]
+#[inline]
+pub(crate) fn pdfium_operation_lock() -> PdfiumOperationLock {
+    crate::bindings::thread_safe::PdfiumThreadMarshall::lock()
+}
+
+#[cfg(not(feature = "thread_safe"))]
+#[inline]
+pub(crate) fn pdfium_operation_lock() -> PdfiumOperationLock {
+    PdfiumOperationLock
+}
+
 #[cfg(feature = "thread_safe")]
 pub(crate) trait PdfiumLibraryBindingsAccessor<'a>: Send + Sync {
     fn bindings(&self) -> &'a dyn PdfiumLibraryBindings {
@@ -315,6 +337,11 @@ impl Pdfium {
         bytes: &'a [u8],
         password: Option<&str>,
     ) -> Result<PdfDocument<'a>, PdfiumError> {
+        // Hold the lock across the load and the read of Pdfium's last error (a process-wide
+        // value), so another thread's load cannot overwrite the error in between.
+
+        let _operation = pdfium_operation_lock();
+
         Self::pdfium_document_handle_to_result(
             unsafe { self.bindings().FPDF_LoadMemDocument64(bytes, password) },
             self.bindings(),
@@ -332,6 +359,8 @@ impl Pdfium {
         bytes: Vec<u8>,
         password: Option<&str>,
     ) -> Result<PdfDocument<'_>, PdfiumError> {
+        let _operation = pdfium_operation_lock();
+
         Self::pdfium_document_handle_to_result(
             unsafe {
                 self.bindings()
@@ -413,6 +442,8 @@ impl Pdfium {
         password: Option<&str>,
     ) -> Result<PdfDocument<'a>, PdfiumError> {
         let mut reader = get_pdfium_file_accessor_from_reader(reader);
+
+        let _operation = pdfium_operation_lock();
 
         Pdfium::pdfium_document_handle_to_result(
             unsafe {
@@ -498,6 +529,8 @@ impl Pdfium {
 
     /// Creates a new, empty [PdfDocument] in memory.
     pub fn create_new_pdf<'a>(&'a self) -> Result<PdfDocument<'a>, PdfiumError> {
+        let _operation = pdfium_operation_lock();
+
         Self::pdfium_document_handle_to_result(
             unsafe { self.bindings().FPDF_CreateNewDocument() },
             self.bindings(),

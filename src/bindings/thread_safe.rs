@@ -63,12 +63,37 @@ use once_cell::sync::Lazy;
 use std::os::raw::{
     c_char, c_double, c_float, c_int, c_long, c_uchar, c_uint, c_ulong, c_ushort, c_void,
 };
+use std::cell::Cell;
 use std::sync::{Mutex, MutexGuard};
 
 static PDFIUM_THREAD_MARSHALL: Lazy<Mutex<PdfiumThreadMarshall>> =
     Lazy::new(|| Mutex::new(PdfiumThreadMarshall::new()));
 
-struct PdfiumThreadMarshall {}
+thread_local! {
+    // How many times the current thread holds the marshall lock. This is a plain Cell<usize>,
+    // which has no destructor, so it stays usable while a thread is being torn down (a Pdfium
+    // object dropped from a thread_local! still needs to take the lock). The guard itself lives
+    // in the PdfiumThreadLock value, never in thread-local storage.
+    static PDFIUM_THREAD_MARSHALL_DEPTH: Cell<usize> = const { Cell::new(0) };
+}
+
+pub(crate) struct PdfiumThreadMarshall {}
+
+/// Proof that the current thread holds the global Pdfium lock. Dropping it releases the lock
+/// once the thread's outermost acquisition is dropped.
+pub(crate) struct PdfiumThreadLock {
+    // Only the outermost acquisition on a thread holds the mutex guard.
+    _guard: Option<MutexGuard<'static, PdfiumThreadMarshall>>,
+}
+
+impl Drop for PdfiumThreadLock {
+    #[inline]
+    fn drop(&mut self) {
+        PDFIUM_THREAD_MARSHALL_DEPTH.with(|depth| depth.set(depth.get() - 1));
+
+        // _guard is dropped after this, releasing the mutex if this was the outermost acquisition.
+    }
+}
 
 impl PdfiumThreadMarshall {
     #[inline]
@@ -76,22 +101,36 @@ impl PdfiumThreadMarshall {
         PdfiumThreadMarshall {}
     }
 
-    /// Returns exclusive read-write access to the global [PdfiumThreadMarshall] singleton.
+    /// Returns exclusive access to Pdfium for the lifetime of the returned value.
     /// The currently running thread will block until the lock is acquired.
-    /// Once this thread acquires the lock, all other threads will block until the lock is released.
+    /// Once this thread acquires the lock, all other threads will block until it is released.
+    ///
+    /// The lock is reentrant. Every binding takes it for the length of its one FFI call, and
+    /// higher-level operations that need several calls to happen together (loading a document
+    /// and then reading Pdfium's last error, setting a form highlight color and then drawing)
+    /// take it around the whole sequence. Because a thread that already holds the lock does not
+    /// take the mutex again, the two kinds of acquisition nest without deadlocking.
     #[inline]
-    fn lock() -> MutexGuard<'static, PdfiumThreadMarshall> {
-        match PDFIUM_THREAD_MARSHALL.lock() {
-            Ok(lock) => lock,
-            Err(err) => {
-                log::error!(
-                    "PdfiumThreadMarshall::lock(): unable to acquire thread lock: {err:#?}"
-                );
-                log::error!("This may indicate a programming error in pdfium-render. Please file an issue: https://github.com/ajrcarey/pdfium-render/issues");
+    pub(crate) fn lock() -> PdfiumThreadLock {
+        let depth = PDFIUM_THREAD_MARSHALL_DEPTH.with(|depth| depth.get());
 
-                panic!()
-            }
-        }
+        let guard = if depth == 0 {
+            // The mutex protects no data, so a poisoned mutex (a thread panicked while holding
+            // it) leaves nothing in an inconsistent state. Carry on rather than panicking in
+            // every later call.
+
+            Some(
+                PDFIUM_THREAD_MARSHALL
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner()),
+            )
+        } else {
+            None
+        };
+
+        PDFIUM_THREAD_MARSHALL_DEPTH.with(|depth| depth.set(depth.get() + 1));
+
+        PdfiumThreadLock { _guard: guard }
     }
 }
 
@@ -6510,6 +6549,44 @@ mod tests {
                 null_mut(),
                 null_mut(),
                 null_mut(),
+            );
+        });
+    }
+
+    #[test]
+    fn the_marshall_lock_is_reentrant_and_released_by_the_outermost_drop() {
+        use std::sync::mpsc::channel;
+        use std::time::Duration;
+
+        // Higher-level operations hold the lock across several bindings calls, and each of those
+        // calls takes it again, so a thread has to be able to hold it more than once.
+
+        let outer = PdfiumThreadMarshall::lock();
+        let inner = PdfiumThreadMarshall::lock();
+
+        drop(inner);
+
+        // Dropping the inner acquisition must not release the lock the outer one still holds.
+
+        let (sender, receiver) = channel();
+
+        std::thread::scope(|scope| {
+            scope.spawn(|| {
+                let _lock = PdfiumThreadMarshall::lock();
+
+                let _ = sender.send(());
+            });
+
+            assert!(
+                receiver.recv_timeout(Duration::from_millis(500)).is_err(),
+                "another thread got the lock while the outer acquisition was still held"
+            );
+
+            drop(outer);
+
+            assert!(
+                receiver.recv_timeout(Duration::from_secs(10)).is_ok(),
+                "the lock was not released by the outermost drop"
             );
         });
     }

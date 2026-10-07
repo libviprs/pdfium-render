@@ -30,6 +30,7 @@ use crate::bindings::PdfiumLibraryBindings;
 use crate::create_transform_setters;
 use crate::error::{PdfiumError, PdfiumInternalError};
 use crate::pdf::bitmap::{PdfBitmap, PdfBitmapFormat, Pixels};
+use crate::pdfium::pdfium_operation_lock;
 use crate::pdf::document::page::annotations::PdfPageAnnotations;
 use crate::pdf::document::page::boundaries::PdfPageBoundaries;
 use crate::pdf::document::page::index_cache::PdfPageIndexCache;
@@ -633,6 +634,12 @@ impl<'a> PdfPage<'a> {
         bitmap: &mut PdfBitmap,
         settings: PdfPageRenderSettings,
     ) -> Result<(), PdfiumError> {
+        // A render is several Pdfium calls (clear, draw the page, set the form highlight colors,
+        // draw the form fields). The highlight colors live in state shared by every render of
+        // the same document, so another thread's calls must not land between them.
+
+        let _operation = pdfium_operation_lock();
+
         let bitmap_handle = bitmap.handle();
 
         if settings.do_clear_bitmap_before_rendering {
