@@ -6,6 +6,7 @@ use std::os::raw::c_float;
 
 #[cfg(any(
     feature = "pdfium_future",
+    feature = "pdfium_8085",
     feature = "pdfium_7881",
     feature = "pdfium_7763",
     feature = "pdfium_7543",
@@ -59,6 +60,7 @@ pub trait PdfPageAnnotationVariableText<'a> {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -77,6 +79,7 @@ pub trait PdfPageAnnotationVariableText<'a> {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7350"
@@ -99,9 +102,6 @@ where
     T: PdfPageAnnotationPrivate<'a>,
 {
     fn font_size(&self, form: &PdfForm) -> Result<PdfPoints, PdfiumError> {
-        #[cfg(feature = "thread_safe")]
-        let _ffi = crate::pdfium::FfiLock::acquire();
-
         let mut value: c_float = 0.0;
 
         if self.bindings().is_true(unsafe {
@@ -126,6 +126,7 @@ where
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -140,9 +141,6 @@ where
         feature = "pdfium_6555",
     ))]
     fn font_color(&self, form: &PdfForm) -> Result<PdfColor, PdfiumError> {
-        #[cfg(feature = "thread_safe")]
-        let _ffi = crate::pdfium::FfiLock::acquire();
-
         let mut red: c_uint = 0;
         let mut green: c_uint = 0;
         let mut blue: c_uint = 0;
@@ -166,14 +164,12 @@ where
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7350"
     ))]
     fn set_font_color(&mut self, form: &PdfForm, color: PdfColor) -> Result<(), PdfiumError> {
-        #[cfg(feature = "thread_safe")]
-        let _ffi = crate::pdfium::FfiLock::acquire();
-
         if self.bindings().is_true(unsafe {
             self.bindings().FPDFAnnot_SetFontColor(
                 form.handle(),
@@ -192,9 +188,6 @@ where
     }
 
     fn justification(&self) -> Result<PdfPageAnnotationVariableTextJustification, PdfiumError> {
-        #[cfg(feature = "thread_safe")]
-        let _ffi = crate::pdfium::FfiLock::acquire();
-
         let mut value: c_float = 0.0;
 
         if self.bindings().is_true(unsafe {

@@ -44,6 +44,7 @@ use std::os::raw::{c_int, c_uint};
 
 #[cfg(any(
     feature = "pdfium_future",
+    feature = "pdfium_8085",
     feature = "pdfium_7881",
     feature = "pdfium_7763",
     feature = "pdfium_7543",
@@ -53,6 +54,7 @@ use crate::pdf::document::page::objects::common::PdfPageObjectIndex;
 
 #[cfg(any(
     feature = "pdfium_future",
+    feature = "pdfium_8085",
     feature = "pdfium_7881",
     feature = "pdfium_7763",
     feature = "pdfium_7543",
@@ -339,9 +341,6 @@ impl<'a> PdfPageObject<'a> {
         ownership: PdfPageObjectOwnership,
         bindings: &'a dyn PdfiumLibraryBindings,
     ) -> Self {
-        #[cfg(feature = "thread_safe")]
-        let _ffi = crate::pdfium::FfiLock::acquire();
-
         match PdfPageObjectType::from_pdfium(
             unsafe { bindings.FPDFPageObj_GetType(object_handle) } as u32
         )
@@ -532,9 +531,6 @@ impl<'a> PdfPageObject<'a> {
 
     /// Returns the clip path for this object, if any.
     pub fn get_clip_path(&self) -> Option<PdfClipPath<'_>> {
-        #[cfg(feature = "thread_safe")]
-        let _ffi = crate::pdfium::FfiLock::acquire();
-
         let path_handle = unsafe {
             self.bindings()
                 .FPDFPageObj_GetClipPath(self.object_handle())
@@ -552,6 +548,7 @@ impl<'a> PdfPageObject<'a> {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -563,9 +560,6 @@ impl<'a> PdfPageObject<'a> {
     /// Marks this [PdfPageObject] as active on its containing page. All page objects
     /// start in the active state by default.
     pub fn set_active(&mut self) -> Result<(), PdfiumError> {
-        #[cfg(feature = "thread_safe")]
-        let _ffi = crate::pdfium::FfiLock::acquire();
-
         if self.bindings().is_true(unsafe {
             self.bindings()
                 .FPDFPageObj_SetIsActive(self.object_handle(), self.bindings().TRUE())
@@ -580,6 +574,7 @@ impl<'a> PdfPageObject<'a> {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -590,9 +585,6 @@ impl<'a> PdfPageObject<'a> {
     ))]
     /// Returns `true` if this [PdfPageObject] is marked as active on its containing page.
     pub fn is_active(&self) -> Result<bool, PdfiumError> {
-        #[cfg(feature = "thread_safe")]
-        let _ffi = crate::pdfium::FfiLock::acquire();
-
         let mut result = self.bindings().FALSE();
 
         if self.bindings().is_true(unsafe {
@@ -609,6 +601,7 @@ impl<'a> PdfPageObject<'a> {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -620,9 +613,6 @@ impl<'a> PdfPageObject<'a> {
     /// Marks this [PdfPageObject] as inactive on its containing page. The page object will
     /// be treated as if it were not in the document, even though it exists internally.
     pub fn set_inactive(&mut self) -> Result<(), PdfiumError> {
-        #[cfg(feature = "thread_safe")]
-        let _ffi = crate::pdfium::FfiLock::acquire();
-
         if self.bindings().is_true(unsafe {
             self.bindings()
                 .FPDFPageObj_SetIsActive(self.object_handle(), self.bindings().FALSE())
@@ -637,6 +627,7 @@ impl<'a> PdfPageObject<'a> {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -895,9 +886,6 @@ where
 
     #[inline]
     fn set_blend_mode(&mut self, blend_mode: PdfPageObjectBlendMode) -> Result<(), PdfiumError> {
-        #[cfg(feature = "thread_safe")]
-        let _ffi = crate::pdfium::FfiLock::acquire();
-
         unsafe {
             self.bindings()
                 .FPDFPageObj_SetBlendMode(self.object_handle(), blend_mode.as_pdfium());
@@ -908,9 +896,6 @@ where
 
     #[inline]
     fn fill_color(&self) -> Result<PdfColor, PdfiumError> {
-        #[cfg(feature = "thread_safe")]
-        let _ffi = crate::pdfium::FfiLock::acquire();
-
         let mut r = 0;
         let mut g = 0;
         let mut b = 0;
@@ -942,9 +927,6 @@ where
 
     #[inline]
     fn set_fill_color(&mut self, fill_color: PdfColor) -> Result<(), PdfiumError> {
-        #[cfg(feature = "thread_safe")]
-        let _ffi = crate::pdfium::FfiLock::acquire();
-
         if self.bindings().is_true(unsafe {
             self.bindings().FPDFPageObj_SetFillColor(
                 self.object_handle(),
@@ -962,9 +944,6 @@ where
 
     #[inline]
     fn stroke_color(&self) -> Result<PdfColor, PdfiumError> {
-        #[cfg(feature = "thread_safe")]
-        let _ffi = crate::pdfium::FfiLock::acquire();
-
         let mut r = 0;
         let mut g = 0;
         let mut b = 0;
@@ -996,9 +975,6 @@ where
 
     #[inline]
     fn set_stroke_color(&mut self, stroke_color: PdfColor) -> Result<(), PdfiumError> {
-        #[cfg(feature = "thread_safe")]
-        let _ffi = crate::pdfium::FfiLock::acquire();
-
         if self.bindings().is_true(unsafe {
             self.bindings().FPDFPageObj_SetStrokeColor(
                 self.object_handle(),
@@ -1016,9 +992,6 @@ where
 
     #[inline]
     fn stroke_width(&self) -> Result<PdfPoints, PdfiumError> {
-        #[cfg(feature = "thread_safe")]
-        let _ffi = crate::pdfium::FfiLock::acquire();
-
         let mut width = 0.0;
 
         if self.bindings().is_true(unsafe {
@@ -1033,9 +1006,6 @@ where
 
     #[inline]
     fn set_stroke_width(&mut self, stroke_width: PdfPoints) -> Result<(), PdfiumError> {
-        #[cfg(feature = "thread_safe")]
-        let _ffi = crate::pdfium::FfiLock::acquire();
-
         if self.bindings().is_true(unsafe {
             self.bindings()
                 .FPDFPageObj_SetStrokeWidth(self.object_handle(), stroke_width.value)
@@ -1048,9 +1018,6 @@ where
 
     #[inline]
     fn line_join(&self) -> Result<PdfPageObjectLineJoin, PdfiumError> {
-        #[cfg(feature = "thread_safe")]
-        let _ffi = crate::pdfium::FfiLock::acquire();
-
         PdfPageObjectLineJoin::from_pdfium(unsafe {
             self.bindings()
                 .FPDFPageObj_GetLineJoin(self.object_handle())
@@ -1060,9 +1027,6 @@ where
 
     #[inline]
     fn set_line_join(&mut self, line_join: PdfPageObjectLineJoin) -> Result<(), PdfiumError> {
-        #[cfg(feature = "thread_safe")]
-        let _ffi = crate::pdfium::FfiLock::acquire();
-
         if self.bindings().is_true(unsafe {
             self.bindings()
                 .FPDFPageObj_SetLineJoin(self.object_handle(), line_join.as_pdfium() as c_int)
@@ -1075,9 +1039,6 @@ where
 
     #[inline]
     fn line_cap(&self) -> Result<PdfPageObjectLineCap, PdfiumError> {
-        #[cfg(feature = "thread_safe")]
-        let _ffi = crate::pdfium::FfiLock::acquire();
-
         PdfPageObjectLineCap::from_pdfium(unsafe {
             self.bindings().FPDFPageObj_GetLineCap(self.object_handle())
         })
@@ -1086,9 +1047,6 @@ where
 
     #[inline]
     fn set_line_cap(&mut self, line_cap: PdfPageObjectLineCap) -> Result<(), PdfiumError> {
-        #[cfg(feature = "thread_safe")]
-        let _ffi = crate::pdfium::FfiLock::acquire();
-
         if self.bindings().is_true(unsafe {
             self.bindings()
                 .FPDFPageObj_SetLineCap(self.object_handle(), line_cap.as_pdfium() as c_int)
@@ -1101,9 +1059,6 @@ where
 
     #[inline]
     fn dash_phase(&self) -> Result<PdfPoints, PdfiumError> {
-        #[cfg(feature = "thread_safe")]
-        let _ffi = crate::pdfium::FfiLock::acquire();
-
         let mut phase = 0.0;
 
         if self.bindings().is_true(unsafe {
@@ -1118,9 +1073,6 @@ where
 
     #[inline]
     fn set_dash_phase(&mut self, dash_phase: PdfPoints) -> Result<(), PdfiumError> {
-        #[cfg(feature = "thread_safe")]
-        let _ffi = crate::pdfium::FfiLock::acquire();
-
         if self.bindings().is_true(unsafe {
             self.bindings()
                 .FPDFPageObj_SetDashPhase(self.object_handle(), dash_phase.value)
@@ -1133,9 +1085,6 @@ where
 
     #[inline]
     fn dash_array(&self) -> Result<Vec<PdfPoints>, PdfiumError> {
-        #[cfg(feature = "thread_safe")]
-        let _ffi = crate::pdfium::FfiLock::acquire();
-
         let dash_count = unsafe {
             self.bindings()
                 .FPDFPageObj_GetDashCount(self.object_handle())
@@ -1160,9 +1109,6 @@ where
     }
 
     fn set_dash_array(&mut self, array: &[PdfPoints], phase: PdfPoints) -> Result<(), PdfiumError> {
-        #[cfg(feature = "thread_safe")]
-        let _ffi = crate::pdfium::FfiLock::acquire();
-
         let dash_array = array.iter().map(|dash| dash.value).collect::<Vec<_>>();
 
         if self.bindings().is_true(unsafe {
@@ -1264,6 +1210,7 @@ impl<'a> PdfPageObjectPrivate<'a> for PdfPageObject<'a> {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",

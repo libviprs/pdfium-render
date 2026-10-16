@@ -242,8 +242,8 @@ Projects that do not require page or page object rendering can disable these fea
 Release 0.8.24 introduced new features to explicitly control the version of the Pdfium API used by `pdfium-render`:
 
 * `pdfium_future`: binds `PdfiumLibraryBindings` to the latest published Pdfium API at <https://pdfium.googlesource.com/pdfium/+/refs/heads/main/public>, irrespective of whether those changes have been built into a release at <https://github.com/bblanchon/pdfium-binaries/releases>. Useful for testing unreleased changes.
-* `pdfium_latest`: binds `PdfiumLibraryBindings` to the latest released build of Pdfium at <https://github.com/bblanchon/pdfium-binaries/releases> supported by `pdfium-render`. This is currently `pdfium_7881`.
-* `pdfium_7881`, `pdfium_7763`, `pdfium_7543`, `pdfium_7350`, `pdfium_7215`, `pdfium_7123`, `pdfium_6996` (but see note below), `pdfium_6721`, `pdfium_6666`, `pdfium_6611`, `pdfium_6569`, `pdfium_6555`, `pdfium_6490`, `pdfium_6406`, `pdfium_6337`, `pdfium_6295`, `pdfium_6259`, `pdfium_6164`, `pdfium_6124`, `pdfium_6110`, `pdfium_6084`, `pdfium_6043`, `pdfium_6015`, `pdfium_5961`: binds `PdfiumLibraryBindings` to the specified version of the Pdfium API.
+* `pdfium_latest`: binds `PdfiumLibraryBindings` to the latest released build of Pdfium at <https://github.com/bblanchon/pdfium-binaries/releases> supported by `pdfium-render`. This is currently `pdfium_8085`.
+* `pdfium_8085`, `pdfium_7881`, `pdfium_7763`, `pdfium_7543`, `pdfium_7350`, `pdfium_7215`, `pdfium_7123`, `pdfium_6996` (but see note below), `pdfium_6721`, `pdfium_6666`, `pdfium_6611`, `pdfium_6569`, `pdfium_6555`, `pdfium_6490`, `pdfium_6406`, `pdfium_6337`, `pdfium_6295`, `pdfium_6259`, `pdfium_6164`, `pdfium_6124`, `pdfium_6110`, `pdfium_6084`, `pdfium_6043`, `pdfium_6015`, `pdfium_5961`: binds `PdfiumLibraryBindings` to the specified version of the Pdfium API.
 
 Note that Pdfium build 6996 contains a known bug affecting macOS systems. For more information and workarounds, see <https://github.com/ajrcarey/pdfium-render/issues/192>.
 
@@ -292,7 +292,7 @@ would translate to the following Rust code:
     }
 ```
 
-As at Pdfium release `pdfium_7881` there are 469 exported functions in the Pdfium API.
+As at Pdfium release `pdfium_8085` there are 480 exported functions in the Pdfium API.
 
 The Pdfium API uses three different string types: classic C-style null-terminated char arrays, UTF-8 byte arrays, and a UTF-16LE byte array type named `FPDF_WIDESTRING`. For functions that take a C-style string or a UTF-8 byte array, `pdfium-render`'s binding will take the standard Rust `&str` type. For functions that take an `FPDF_WIDESTRING`, `pdfium-render` exposes two functions: the vanilla `FPDF_*()` function that takes an `FPDF_WIDESTRING`, and an additional `FPDF_*_str()` helper function that takes a standard Rust `&str` and converts it internally to an `FPDF_WIDESTRING` before calling Pdfium. Examples of functions with additional `_str()` helpers include `FPDFBookmark_Find()`, `FPDFText_SetText()`, `FPDFText_FindStart()`, `FPDFDoc_AddAttachment()`, `FPDFAnnot_SetStringValue()`, and `FPDFAttachment_SetStringValue()`.
 

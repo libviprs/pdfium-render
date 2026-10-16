@@ -19,9 +19,6 @@ pub type PdfFontGlyphIndex = u16;
 /// A collection of all the [PdfFontGlyph] objects in a [PdfFont].
 pub struct PdfFontGlyphs<'a> {
     handle: FPDF_FONT,
-    // OnceCell rather than Cell: PdfFontGlyphs is Sync (a shared &PdfFont can be
-    // used from several threads), so the lazily-computed length must be published
-    // without a data race. OnceCell::get_or_init is thread-safe.
     len: OnceCell<PdfFontGlyphIndex>,
     lifetime: PhantomData<&'a FPDF_FONT>,
 }
@@ -55,9 +52,6 @@ impl<'a> PdfFontGlyphs<'a> {
 
     /// Returns the highest index position of an extant glyph within the given index range.
     fn find_maximum_valid_glyph_index(&self, min: u16, max: u16) -> Option<u16> {
-        #[cfg(feature = "thread_safe")]
-        let _ffi = crate::pdfium::FfiLock::acquire();
-
         // Exit immediately if the maximum valid glyph index lies outside the given index boundaries.
 
         if !(unsafe {

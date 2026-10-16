@@ -3,7 +3,7 @@ use crate::pdf::document::page::PdfPageContentRegenerationStrategy;
 use crate::pdf::document::pages::PdfPageIndex;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::{Mutex, MutexGuard};
 
 /// A cache of [PdfPageIndex] indices for all open [PdfPage] objects.
 /// We keep track of these so that we can return accurate [PdfPageIndex] values to
@@ -77,15 +77,6 @@ impl PdfPageIndexCache {
             if self.documents_by_maximum_index.get(&document).copied() == Some(props.index) {
                 // This page had the maximum page index for this document. Now that it's been removed
                 // from the cache, we need to find the new maximum page index for this document.
-                //
-                // The search has to be scoped to this document. `indices_by_page` is shared by
-                // every open document, so asking whether it is globally empty answers the wrong
-                // question: whenever some other document still holds entries, this document falls
-                // through to the search below and, having no entries of its own left, records a
-                // maximum index of zero instead of dropping out of the map. That stale entry
-                // outlives the document, and pdfium reuses `FPDF_DOCUMENT` addresses, so the next
-                // document allocated at the same address inherits a maximum index it never set,
-                // corrupting the index shuffling in `insert()` and `delete()`.
 
                 let maximum = self
                     .indices_by_page
@@ -216,23 +207,9 @@ impl PdfPageIndexCache {
         }
     }
 
-    /// Locks the process-global [PAGE_INDEX_CACHE], recovering the guard if the mutex has been
-    /// poisoned by a panic in another thread.
-    ///
-    /// Recovering here is deliberate. The cache holds nothing but `Copy` handles and page indices
-    /// in three `HashMap`s, so a panic while the guard was held cannot leave it in an unsound
-    /// state; the worst case is a stale index entry for a page that is going away anyway.
-    ///
-    /// Unwrapping instead escalates any single panic under the lock into a process abort.
-    /// [PdfPage::drop_impl] takes this same lock, so once the mutex is poisoned every subsequent
-    /// page drop panics inside a destructor, and Rust turns a panic during unwinding into a
-    /// non-unwinding abort (SIGABRT). One failed assertion anywhere in the crate then kills the
-    /// whole process instead of failing the one operation that went wrong.
     #[inline]
     fn lock() -> MutexGuard<'static, PdfPageIndexCache> {
-        PAGE_INDEX_CACHE
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
+        PAGE_INDEX_CACHE.lock().unwrap()
     }
 
     // The remaining methods in this implementation take care of thread-safe locking.
@@ -353,7 +330,7 @@ unsafe impl Sync for PdfPageIndexCache {}
 
 #[cfg(test)]
 mod tests {
-    use crate::pdf::document::page::index_cache::{PdfPageIndexCache, PAGE_INDEX_CACHE};
+    use crate::pdf::document::page::index_cache::PdfPageIndexCache;
     use crate::prelude::*;
     use crate::utils::test::test_bind_to_pdfium;
 
@@ -1322,185 +1299,41 @@ mod tests {
         assert_eq!(PdfPageIndexCache::count_for_document(document), 0);
     }
 
-    // -----------------------------------------------------------------------
-    // Kept across the upstream sync (2026-09-12).
-    //
-    // Upstream's own #266 and #267 work adopted the rest of this module's
-    // tests, so the merge took its version wholesale. These two have no
-    // upstream counterpart and still pin behaviour only this fork has:
-    // `lock()` recovering from a poisoned mutex (upstream is still
-    // `.lock().unwrap()`), and the document-scoped maximum-index search in
-    // `remove()`.
-    // -----------------------------------------------------------------------
-
     #[test]
-    fn dropping_a_documents_last_page_clears_its_maximum_index() {
-        // Pure-logic pin for the document-scoped maximum index search in `remove()`. It drives the
-        // shared cache with synthetic (non-pdfium) handles, so it needs no native library and is
-        // deterministic from a single thread.
-        //
-        // `remove()` used to ask whether `indices_by_page` was globally empty before deciding that
-        // a document had no cached indices left. Whenever any other document still held entries,
-        // the answer was "not empty" and the document fell through to a search that found nothing
-        // of its own, seeded its maximum at zero, and wrote that back. The entry then outlived the
-        // document forever. pdfium reuses `FPDF_DOCUMENT` addresses, so the next document handed
-        // out at the same address inherited a maximum index it never set, which silently skews the
-        // index shuffling `insert()` and `delete()` do for it.
-        //
-        // I keep a second document's entry alive for the whole test, because a globally empty
-        // cache is exactly the case the old code got right.
+    fn removing_a_documents_last_page_clears_its_maximum_index() {
+        // Synthetic handles, so no native library is needed. Document B keeps an entry in the
+        // shared cache while document A loses its only page; before the fix, A was left behind in
+        // documents_by_maximum_index with a maximum index of 0.
 
         use crate::bindgen::{FPDF_DOCUMENT, FPDF_PAGE};
         use crate::pdf::document::page::PdfPageContentRegenerationStrategy;
 
-        let document = 0xD000_0000usize as FPDF_DOCUMENT;
-        let other_document = 0xD100_0000usize as FPDF_DOCUMENT;
+        let document_a = 0xD000_0000usize as FPDF_DOCUMENT;
+        let document_b = 0xE000_0000usize as FPDF_DOCUMENT;
 
-        let page = 0xD000_0001usize as FPDF_PAGE;
-        let other_page = 0xD100_0001usize as FPDF_PAGE;
+        let a_page_0 = 0xD000_0001usize as FPDF_PAGE;
+        let b_page_0 = 0xE000_0001usize as FPDF_PAGE;
 
-        PdfPageIndexCache::cache_props_for_page(
-            other_document,
-            other_page,
-            7,
-            PdfPageContentRegenerationStrategy::AutomaticOnEveryChange,
-        );
-
-        PdfPageIndexCache::cache_props_for_page(
-            document,
-            page,
-            3,
-            PdfPageContentRegenerationStrategy::AutomaticOnEveryChange,
-        );
-
-        assert_eq!(
-            PdfPageIndexCache::lock()
-                .documents_by_maximum_index
-                .get(&document)
-                .copied(),
-            Some(3)
-        );
-
-        // Drop this document's only cached page while the other document still has one.
-
-        PdfPageIndexCache::remove_index_for_page(document, page);
-
-        assert_eq!(
-            PdfPageIndexCache::count_for_document(document),
-            0,
-            "the page entry itself should be gone"
-        );
-
-        assert_eq!(
-            PdfPageIndexCache::lock()
-                .documents_by_maximum_index
-                .get(&document)
-                .copied(),
-            None,
-            "a document with no cached page indices left must drop out of \
-             documents_by_maximum_index, not linger with a maximum index of zero for whichever \
-             document pdfium next allocates at the same address"
-        );
-
-        // The other document is untouched by all of this.
-
-        assert_eq!(
-            PdfPageIndexCache::lock()
-                .documents_by_maximum_index
-                .get(&other_document)
-                .copied(),
-            Some(7)
-        );
-
-        // Clean up my synthetic entry so the shared cache is left exactly as I found it.
-
-        PdfPageIndexCache::remove_index_for_page(other_document, other_page);
-
-        assert_eq!(
-            PdfPageIndexCache::lock()
-                .documents_by_maximum_index
-                .get(&other_document)
-                .copied(),
-            None
-        );
-    }
-
-    #[test]
-    fn poisoned_cache_mutex_does_not_abort_later_page_drops() {
-        // This pins the recovery behaviour of `PdfPageIndexCache::lock()`. It used to unwrap the
-        // `LockResult`, so a single panic anywhere under the cache guard poisoned the
-        // process-global mutex for the rest of the run. `PdfPage::drop_impl` takes that same lock,
-        // so the very next page drop then panicked inside a destructor, and Rust turns a panic
-        // during unwinding into a non-unwinding abort: one failed assertion killed the whole test
-        // binary with SIGABRT and hid every test that had not run yet.
-        //
-        // I poison the mutex on purpose, then check the two things that used to break: that
-        // `lock()` still hands back a usable guard, and that a full create/read/drop cycle through
-        // the public API still keeps the cache accurate. The `catch_unwind` check comes first so
-        // that a regression fails cleanly here, before any live `PdfPage` exists whose destructor
-        // could turn the failure into an abort.
-        //
-        // Poisoning a `Mutex` is permanent and process-global, but it is inert now that `lock()`
-        // recovers from it, so this leaves nothing behind for the other tests. The panic message
-        // the poisoning thread prints is expected output, not a failure.
-
-        use std::panic::{catch_unwind, AssertUnwindSafe};
-        use std::thread;
-
-        let poisoner = thread::spawn(|| {
-            let _guard = PdfPageIndexCache::lock();
-
-            panic!("deliberately poisoning PAGE_INDEX_CACHE; this panic is expected");
-        });
-
-        assert!(
-            poisoner.join().is_err(),
-            "the poisoning thread was supposed to panic while holding the cache guard"
-        );
-
-        assert!(
-            PAGE_INDEX_CACHE.lock().is_err(),
-            "PAGE_INDEX_CACHE should be poisoned at this point"
-        );
-
-        let recovered = catch_unwind(AssertUnwindSafe(|| {
-            PdfPageIndexCache::lock().pages_by_index.len()
-        }));
-
-        assert!(
-            recovered.is_ok(),
-            "PdfPageIndexCache::lock() panicked on a poisoned mutex; every later PdfPage drop \
-             would panic inside its destructor and abort the process"
-        );
-
-        // Now the end-to-end path: creating a page, reading its cached entry, and dropping it all
-        // go through the poisoned mutex.
-
-        let pdfium = test_bind_to_pdfium();
-
-        let mut document = pdfium
-            .create_new_pdf()
-            .expect("could not create a document through the poisoned cache mutex");
-
-        {
-            let _page = document
-                .pages_mut()
-                .create_page_at_start(PdfPagePaperSize::a4())
-                .expect("could not create a page through the poisoned cache mutex");
-
-            let count = PdfPageIndexCache::count_for_document(document.handle());
-
-            assert_eq!(
-                count, 1,
-                "the page was not cached through the poisoned mutex"
+        for (document, page) in [(document_a, a_page_0), (document_b, b_page_0)] {
+            PdfPageIndexCache::cache_props_for_page(
+                document,
+                page,
+                0,
+                PdfPageContentRegenerationStrategy::AutomaticOnEveryChange,
             );
         }
 
-        let count = PdfPageIndexCache::count_for_document(document.handle());
+        PdfPageIndexCache::remove_index_for_page(document_a, a_page_0);
 
         assert_eq!(
-            count, 0,
-            "the page drop did not reach the cache through the poisoned mutex"
+            PdfPageIndexCache::maximum_index_for_document(document_a),
+            None
         );
+        assert_eq!(
+            PdfPageIndexCache::maximum_index_for_document(document_b),
+            Some(0)
+        );
+
+        PdfPageIndexCache::remove_index_for_page(document_b, b_page_0);
     }
 }

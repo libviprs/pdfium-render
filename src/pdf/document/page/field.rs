@@ -105,9 +105,6 @@ impl<'a> PdfFormField<'a> {
         annotation_handle: FPDF_ANNOTATION,
         bindings: &'a dyn PdfiumLibraryBindings,
     ) -> Option<Self> {
-        #[cfg(feature = "thread_safe")]
-        let _ffi = crate::pdfium::FfiLock::acquire();
-
         let result = unsafe { bindings.FPDFAnnot_GetFormFieldType(form_handle, annotation_handle) };
 
         if result == -1 {
@@ -308,6 +305,7 @@ pub trait PdfFormFieldCommon {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -325,6 +323,7 @@ pub trait PdfFormFieldCommon {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -346,6 +345,7 @@ pub trait PdfFormFieldCommon {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -387,6 +387,7 @@ where
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -404,6 +405,7 @@ where
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -421,6 +423,7 @@ where
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",

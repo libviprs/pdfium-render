@@ -225,9 +225,6 @@ impl<'a> PdfDocument<'a> {
 
     /// Returns the file version of this [PdfDocument].
     pub fn version(&self) -> PdfDocumentVersion {
-        #[cfg(feature = "thread_safe")]
-        let _ffi = crate::pdfium::FfiLock::acquire();
-
         let mut version = 0;
 
         if unsafe {
@@ -329,9 +326,6 @@ impl<'a> PdfDocument<'a> {
     /// If the given writer implementation itself calls Pdfium functions, then it will block
     /// when used in conjunction with this crate's `thread_safe` feature.
     pub fn save_to_writer<W: Write + 'static>(&self, writer: &mut W) -> Result<(), PdfiumError> {
-        #[cfg(feature = "thread_safe")]
-        let _ffi = crate::pdfium::FfiLock::acquire();
-
         // TODO: AJRC - 25/5/22 - investigate supporting the FPDF_INCREMENTAL, FPDF_NO_INCREMENTAL,
         // and FPDF_REMOVE_SECURITY flags defined in fpdf_save.h. There's not a lot of information
         // on what they actually do, however.
@@ -423,9 +417,6 @@ impl<'a> Drop for PdfDocument<'a> {
     /// from a file, the file handle on the document.
     #[inline]
     fn drop(&mut self) {
-        #[cfg(feature = "thread_safe")]
-        let _ffi = crate::pdfium::FfiLock::acquire();
-
         // Drop this document's PdfForm, if any, before we close the document itself.
         // This ensures that FPDFDOC_ExitFormFillEnvironment() is called _before_ FPDF_CloseDocument(),
         // avoiding a segmentation fault when using Pdfium builds compiled with V8/XFA support.

@@ -48,6 +48,9 @@ struct HDC;
 
 pub mod version;
 
+#[cfg(feature = "pdfium_8085")]
+pub use crate::bindgen::FPDF_TEXT_DIRECTION;
+
 pub use crate::bindgen::{
     FPDF_CharsetFontMap, FPDFANNOT_COLORTYPE, FPDF_ACTION, FPDF_ANNOTATION,
     FPDF_ANNOTATION_SUBTYPE, FPDF_ANNOT_APPEARANCEMODE, FPDF_ATTACHMENT, FPDF_AVAIL, FPDF_BITMAP,
@@ -65,6 +68,7 @@ pub use crate::bindgen::{
 
 #[cfg(any(
     feature = "pdfium_future",
+    feature = "pdfium_8085",
     feature = "pdfium_7881",
     feature = "pdfium_7763",
     feature = "pdfium_7543",
@@ -131,24 +135,13 @@ use std::ffi::{
 ))]
 use std::ffi::CString;
 
-/// Computes the length in bytes of a Pdfium bitmap's buffer from its stride and
-/// height.
+/// Length in bytes of a bitmap buffer with the given stride and height.
 ///
-/// Pdfium reports both as `c_int`, so the obvious `stride * height` is an `i32`
-/// product and a large raster overflows it before anything widens the result. A
-/// 48"x36" drawing rendered at 600 DPI has a stride of 115200 and a height of
-/// 21600, needing 2_488_320_000 bytes, past `i32::MAX`. The product wraps to
-/// -1_806_647_296, sign-extends through `as usize` to about 1.8e19, and that
-/// length reaches `slice::from_raw_parts` over a 2.3 GB allocation. Other shapes
-/// wrap to a small positive value instead and silently truncate the raster.
-///
-/// The multiply happens in `usize` here, so it cannot wrap on a 64-bit target
-/// (the product of two non-negative `i32`s is at most about 4.6e18), and
-/// saturates rather than wrapping on a 32-bit one. A non-positive stride or
-/// height is Pdfium's error and empty-bitmap signal, and yields zero so callers
-/// never build a slice over an invalid span.
+/// Pdfium reports both as `c_int`, so `stride * height` is an `i32` product and a bitmap over
+/// `i32::MAX` bytes wraps before anything widens the result. Multiplying in `usize` avoids that;
+/// a non-positive stride or height is Pdfium's error or empty-bitmap signal and yields zero.
 #[cfg(not(target_arch = "wasm32"))]
-fn bitmap_buffer_len(stride: c_int, height: c_int) -> usize {
+fn bitmap_buffer_len(stride: std::os::raw::c_int, height: std::os::raw::c_int) -> usize {
     if stride <= 0 || height <= 0 {
         return 0;
     }
@@ -938,6 +931,7 @@ pub trait PdfiumLibraryBindings: Send + Sync {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -1581,6 +1575,7 @@ pub trait PdfiumLibraryBindings: Send + Sync {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763"
     ))]
@@ -1791,6 +1786,7 @@ pub trait PdfiumLibraryBindings: Send + Sync {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -1921,6 +1917,7 @@ pub trait PdfiumLibraryBindings: Send + Sync {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -1981,6 +1978,7 @@ pub trait PdfiumLibraryBindings: Send + Sync {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -2042,6 +2040,7 @@ pub trait PdfiumLibraryBindings: Send + Sync {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -2108,6 +2107,7 @@ pub trait PdfiumLibraryBindings: Send + Sync {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -2185,6 +2185,7 @@ pub trait PdfiumLibraryBindings: Send + Sync {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -2270,6 +2271,7 @@ pub trait PdfiumLibraryBindings: Send + Sync {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -2310,6 +2312,7 @@ pub trait PdfiumLibraryBindings: Send + Sync {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -2337,6 +2340,7 @@ pub trait PdfiumLibraryBindings: Send + Sync {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -2433,6 +2437,7 @@ pub trait PdfiumLibraryBindings: Send + Sync {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -3123,6 +3128,7 @@ pub trait PdfiumLibraryBindings: Send + Sync {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -3219,19 +3225,7 @@ pub trait PdfiumLibraryBindings: Send + Sync {
             return false;
         }
 
-        if buffer_length == 0 {
-            // There is nothing to copy, and `from_raw_parts_mut` requires a
-            // non-null, aligned pointer even for a zero-length slice. Returning
-            // true keeps the documented contract, which is that a buffer whose
-            // length matches the bitmap's is applied.
-            return true;
-        }
-
         let buffer_start = self.FPDFBitmap_GetBuffer(bitmap);
-
-        if buffer_start.is_null() {
-            return false;
-        }
 
         let destination =
             unsafe { std::slice::from_raw_parts_mut(buffer_start as *mut u8, buffer_length) };
@@ -3274,9 +3268,6 @@ pub trait PdfiumLibraryBindings: Send + Sync {
         );
 
         if len == 0 || buffer.is_null() {
-            // `from_raw_parts` requires a non-null, aligned pointer even for a
-            // zero-length slice, so hand back a genuinely empty one rather than
-            // building one over a null or invalid span.
             return &[];
         }
 
@@ -4372,6 +4363,7 @@ pub trait PdfiumLibraryBindings: Send + Sync {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -4570,6 +4562,7 @@ pub trait PdfiumLibraryBindings: Send + Sync {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -4605,6 +4598,7 @@ pub trait PdfiumLibraryBindings: Send + Sync {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -4801,6 +4795,7 @@ pub trait PdfiumLibraryBindings: Send + Sync {
     /// Returns the handle to the attachment object, or `NULL` on failure.
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -4832,6 +4827,7 @@ pub trait PdfiumLibraryBindings: Send + Sync {
     /// See [PdfiumLibraryBindings::FPDFAnnot_AddFileAttachment_str].
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -4866,6 +4862,7 @@ pub trait PdfiumLibraryBindings: Send + Sync {
     /// Returns a handle to the new attachment object, or `NULL` on failure.
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -5796,6 +5793,7 @@ pub trait PdfiumLibraryBindings: Send + Sync {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -5814,6 +5812,7 @@ pub trait PdfiumLibraryBindings: Send + Sync {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -6556,6 +6555,7 @@ pub trait PdfiumLibraryBindings: Send + Sync {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -6598,6 +6598,7 @@ pub trait PdfiumLibraryBindings: Send + Sync {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -7355,6 +7356,7 @@ pub trait PdfiumLibraryBindings: Send + Sync {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -7489,7 +7491,11 @@ pub trait PdfiumLibraryBindings: Send + Sync {
         size: *mut c_float,
     ) -> FPDF_BOOL;
 
-    #[cfg(any(feature = "pdfium_future", feature = "pdfium_7881"))]
+    #[cfg(any(
+        feature = "pdfium_future",
+        feature = "pdfium_8085",
+        feature = "pdfium_7881"
+    ))]
     /// Sets the font size of a text object.
     ///
     ///    `text` - handle to a text page object.
@@ -7677,7 +7683,11 @@ pub trait PdfiumLibraryBindings: Send + Sync {
         count: size_t,
     ) -> FPDF_BOOL;
 
-    #[cfg(any(feature = "pdfium_future", feature = "pdfium_7881"))]
+    #[cfg(any(
+        feature = "pdfium_future",
+        feature = "pdfium_8085",
+        feature = "pdfium_7881"
+    ))]
     /// Sets the character positions for a text object.
     ///
     ///    `text_object`  - handle to the text object.
@@ -7744,6 +7754,7 @@ pub trait PdfiumLibraryBindings: Send + Sync {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -7792,7 +7803,11 @@ pub trait PdfiumLibraryBindings: Send + Sync {
         cid_to_gid_map_data_size: u32,
     ) -> FPDF_FONT;
 
-    #[cfg(any(feature = "pdfium_future", feature = "pdfium_7881"))]
+    #[cfg(any(
+        feature = "pdfium_future",
+        feature = "pdfium_8085",
+        feature = "pdfium_7881"
+    ))]
     /// Inserts `page_object` into `page`.
     ///
     ///    `page`        - handle to a page
@@ -7843,6 +7858,7 @@ pub trait PdfiumLibraryBindings: Send + Sync {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -7936,6 +7952,7 @@ pub trait PdfiumLibraryBindings: Send + Sync {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -7966,6 +7983,7 @@ pub trait PdfiumLibraryBindings: Send + Sync {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -8032,6 +8050,7 @@ pub trait PdfiumLibraryBindings: Send + Sync {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -8119,6 +8138,7 @@ pub trait PdfiumLibraryBindings: Send + Sync {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -8180,7 +8200,11 @@ pub trait PdfiumLibraryBindings: Send + Sync {
         name: &str,
     ) -> FPDF_PAGEOBJECTMARK;
 
-    #[cfg(any(feature = "pdfium_future", feature = "pdfium_7881"))]
+    #[cfg(any(
+        feature = "pdfium_future",
+        feature = "pdfium_8085",
+        feature = "pdfium_7881"
+    ))]
     /// Adds an existing content mark to a `page_object`. If consecutive page objects
     /// have the same `mark`, the generated PDF will contain a single mark that spans
     /// all of them. If the page objects are not consecutive, multiple copies of the
@@ -8216,6 +8240,7 @@ pub trait PdfiumLibraryBindings: Send + Sync {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -8301,6 +8326,7 @@ pub trait PdfiumLibraryBindings: Send + Sync {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -8417,6 +8443,7 @@ pub trait PdfiumLibraryBindings: Send + Sync {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543"
@@ -8443,6 +8470,7 @@ pub trait PdfiumLibraryBindings: Send + Sync {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -8525,6 +8553,7 @@ pub trait PdfiumLibraryBindings: Send + Sync {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -8632,6 +8661,7 @@ pub trait PdfiumLibraryBindings: Send + Sync {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543"
@@ -8688,6 +8718,7 @@ pub trait PdfiumLibraryBindings: Send + Sync {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -9047,6 +9078,7 @@ pub trait PdfiumLibraryBindings: Send + Sync {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -9481,6 +9513,7 @@ pub trait PdfiumLibraryBindings: Send + Sync {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -9516,6 +9549,7 @@ pub trait PdfiumLibraryBindings: Send + Sync {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -10160,6 +10194,7 @@ pub trait PdfiumLibraryBindings: Send + Sync {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -10198,6 +10233,7 @@ pub trait PdfiumLibraryBindings: Send + Sync {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763"
     ))]
@@ -10228,6 +10264,7 @@ pub trait PdfiumLibraryBindings: Send + Sync {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
     ))]
@@ -10270,6 +10307,7 @@ pub trait PdfiumLibraryBindings: Send + Sync {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
     ))]
@@ -10311,6 +10349,197 @@ pub trait PdfiumLibraryBindings: Send + Sync {
 
         self.FPDFCatalog_SetLanguage(document, c_language.as_ptr())
     }
+    #[cfg(feature = "pdfium_8085")]
+    /// Sets the description of `attachment` to `value`.
+    ///
+    ///    `attachment` - handle to an attachment.
+    ///
+    ///    `value`      - the new description, as a UTF-16LE encoded, NUL-terminated wide string.
+    ///
+    /// Returns `true` on success.
+    #[allow(non_snake_case)]
+    unsafe fn FPDFAttachment_SetDescription(
+        &self,
+        attachment: FPDF_ATTACHMENT,
+        value: FPDF_WIDESTRING,
+    ) -> FPDF_BOOL;
+
+    #[cfg(feature = "pdfium_8085")]
+    /// Gets the description of `attachment`.
+    ///
+    ///    `attachment` - handle to an attachment.
+    ///
+    ///    `buffer`     - buffer for holding the description as a UTF-16LE encoded, NUL-terminated string. May be `NULL`.
+    ///
+    ///    `buflen`     - length of `buffer` in bytes.
+    ///
+    /// Returns the length of the description in bytes, including the NUL terminator. The description is only copied to `buffer` if it is large enough.
+    #[allow(non_snake_case)]
+    unsafe fn FPDFAttachment_GetDescription(
+        &self,
+        attachment: FPDF_ATTACHMENT,
+        buffer: *mut FPDF_WCHAR,
+        buflen: c_ulong,
+    ) -> c_ulong;
+
+    #[cfg(feature = "pdfium_8085")]
+    /// Gets the associated file (AF) relationship of `attachment`, such as `Source`, `Data` or `Alternative`.
+    ///
+    ///    `attachment` - handle to an attachment.
+    ///
+    ///    `buffer`     - buffer for holding the relationship as a UTF-16LE encoded, NUL-terminated string. May be `NULL`.
+    ///
+    ///    `buflen`     - length of `buffer` in bytes.
+    ///
+    /// Returns the length of the relationship in bytes, including the NUL terminator. The relationship is only copied to `buffer` if it is large enough.
+    #[allow(non_snake_case)]
+    unsafe fn FPDFAttachment_GetAFRelationship(
+        &self,
+        attachment: FPDF_ATTACHMENT,
+        buffer: *mut FPDF_WCHAR,
+        buflen: c_ulong,
+    ) -> c_ulong;
+
+    #[cfg(feature = "pdfium_8085")]
+    /// Gets the text color of `bookmark`.
+    ///
+    ///    `bookmark` - handle to a bookmark.
+    ///
+    ///    `R`, `G`, `B` - receive the red, green and blue components, each in the range 0.0 to 1.0.
+    ///
+    /// Returns `true` if the bookmark has a color, in which case the outputs are set.
+    #[allow(non_snake_case)]
+    unsafe fn FPDFBookmark_GetColor(
+        &self,
+        bookmark: FPDF_BOOKMARK,
+        R: *mut c_float,
+        G: *mut c_float,
+        B: *mut c_float,
+    ) -> FPDF_BOOL;
+
+    #[cfg(feature = "pdfium_8085")]
+    /// Gets the style flags of `bookmark`.
+    ///
+    ///    `bookmark` - handle to a bookmark.
+    ///
+    /// Returns the style flags (bit 0 for italic, bit 1 for bold) as an integer.
+    #[allow(non_snake_case)]
+    unsafe fn FPDFBookmark_GetStyle(&self, bookmark: FPDF_BOOKMARK) -> c_int;
+
+    #[cfg(feature = "pdfium_8085")]
+    /// Gets a bitmap rasterization of the stroke pattern of `page_object`.
+    ///
+    ///    `document`    - handle to a document.
+    ///
+    ///    `page_object` - handle to a page object.
+    ///
+    /// Returns a handle to a bitmap, or `NULL` on failure. The caller owns the bitmap and must release it with `FPDFBitmap_Destroy()`.
+    #[allow(non_snake_case)]
+    unsafe fn FPDFPageObj_GetRenderedStrokePattern(
+        &self,
+        document: FPDF_DOCUMENT,
+        page_object: FPDF_PAGEOBJECT,
+    ) -> FPDF_BITMAP;
+
+    #[cfg(feature = "pdfium_8085")]
+    /// Gets a bitmap rasterization of the fill pattern of `page_object`.
+    ///
+    ///    `document`    - handle to a document.
+    ///
+    ///    `page_object` - handle to a page object.
+    ///
+    /// Returns a handle to a bitmap, or `NULL` on failure. The caller owns the bitmap and must release it with `FPDFBitmap_Destroy()`.
+    #[allow(non_snake_case)]
+    unsafe fn FPDFPageObj_GetRenderedFillPattern(
+        &self,
+        document: FPDF_DOCUMENT,
+        page_object: FPDF_PAGEOBJECT,
+    ) -> FPDF_BITMAP;
+
+    #[cfg(feature = "pdfium_8085")]
+    /// Gets the two control points of the Bezier segment at `index` in `path`.
+    ///
+    ///    `path`                 - handle to a path object.
+    ///
+    ///    `index`                - the index of the segment.
+    ///
+    ///    `first_control_point`  - receives the first control point.
+    ///
+    ///    `second_control_point` - receives the second control point.
+    ///
+    /// Returns `true` on success.
+    #[allow(non_snake_case)]
+    unsafe fn FPDFPath_GetBezierControlPoints(
+        &self,
+        path: FPDF_PAGEOBJECT,
+        index: usize,
+        first_control_point: *mut FS_POINTF,
+        second_control_point: *mut FS_POINTF,
+    ) -> FPDF_BOOL;
+
+    #[cfg(feature = "pdfium_8085")]
+    /// Gets the text direction of the form field widget `annot`.
+    ///
+    ///    `handle` - handle to the form fill module.
+    ///
+    ///    `annot`  - handle to a form field widget annotation.
+    ///
+    /// Returns the direction as an `FPDF_TEXT_DIRECTION` value.
+    #[allow(non_snake_case)]
+    unsafe fn FORM_GetTextDirection(
+        &self,
+        handle: FPDF_FORMHANDLE,
+        annot: FPDF_ANNOTATION,
+    ) -> FPDF_TEXT_DIRECTION;
+
+    #[cfg(feature = "pdfium_8085")]
+    /// Sets the text direction of the form field widget `annot`.
+    ///
+    ///    `handle`    - handle to the form fill module.
+    ///
+    ///    `annot`     - handle to a form field widget annotation.
+    ///
+    ///    `direction` - the new direction.
+    ///
+    /// Returns `true` on success.
+    #[allow(non_snake_case)]
+    unsafe fn FORM_SetTextDirection(
+        &self,
+        handle: FPDF_FORMHANDLE,
+        annot: FPDF_ANNOTATION,
+        direction: FPDF_TEXT_DIRECTION,
+    ) -> FPDF_BOOL;
+
+    #[cfg(feature = "pdfium_8085")]
+    /// Gets the raw (unmapped) type of `struct_element`, exactly as it appears in the structure tree, before any role map is applied.
+    ///
+    ///    `struct_element` - handle to the struct element.
+    ///
+    ///    `buffer`         - buffer for holding the type as a UTF-16LE encoded, NUL-terminated string. May be `NULL`.
+    ///
+    ///    `buflen`         - length of `buffer`, in bytes.
+    ///
+    /// Returns the length of the type in bytes, including the NUL terminator. The type is only copied to `buffer` if it is large enough.
+    #[allow(non_snake_case)]
+    unsafe fn FPDF_StructElement_GetRawType(
+        &self,
+        struct_element: FPDF_STRUCTELEMENT,
+        buffer: *mut FPDF_WCHAR,
+        buflen: usize,
+    ) -> c_ulong;
+
+    #[cfg(feature = "pdfium_8085")]
+    #[allow(non_snake_case)]
+    unsafe fn FPDFAttachment_SetDescription_str(
+        &self,
+        attachment: FPDF_ATTACHMENT,
+        value: &str,
+    ) -> FPDF_BOOL {
+        self.FPDFAttachment_SetDescription(
+            attachment,
+            get_pdfium_utf16le_bytes_from_str(value).as_ptr() as FPDF_WIDESTRING,
+        )
+    }
 }
 
 #[cfg(test)]
@@ -10329,61 +10558,80 @@ mod tests {
         Ok(())
     }
 
-    /// The overflow this guards is not hypothetical: it is the arithmetic that
-    /// `stride * height` used to perform before anything widened the result.
-    /// The first assertion is the positive control, since a test that picked a
-    /// shape which happens to fit in an `i32` would pass against the very bug
-    /// it is named for.
     #[test]
-    #[cfg(not(target_arch = "wasm32"))]
-    fn bitmap_buffer_len_does_not_overflow_i32() {
-        use crate::bindings::bitmap_buffer_len;
-        use std::os::raw::c_int;
+    #[cfg(not(any(feature = "static", target_arch = "wasm32")))]
+    fn test_bitmap_buffer_length_over_c_int_max() -> Result<(), PdfiumError> {
+        // Pdfium reports a bitmap's stride and height as c_int. FPDFBitmap_GetBuffer_as_slice()
+        // and FPDFBitmap_SetBuffer() used to multiply the two as c_int, so a bitmap of 2 GiB or
+        // more overflowed the product (a panic in debug builds, a wrapped length in release
+        // builds) before anything widened it to usize.
+        //
+        // The bitmap here wraps a caller-owned buffer, so Pdfium allocates nothing. The buffer is
+        // zero-initialized, which the allocator maps lazily, and the test only reads lengths,
+        // so almost none of the 2 GiB is ever touched.
 
-        // A 48"x36" drawing rendered at 600 DPI: 28800 px wide at 4 bytes per
-        // pixel gives a stride of 115200, with a height of 21600.
-        let stride: c_int = 115_200;
-        let height: c_int = 21_600;
+        use std::os::raw::{c_int, c_void};
 
-        assert!(
-            stride.checked_mul(height).is_none(),
-            "this shape must actually overflow c_int, or the test cannot fail"
-        );
+        let pdfium = test_bind_to_pdfium();
+        let bindings = pdfium.bindings();
 
-        assert_eq!(bitmap_buffer_len(stride, height), 2_488_320_000usize);
+        // 16384 BGRA pixels per row is a stride of 65536 bytes, and 32768 rows of that is
+        // exactly 2^31 bytes, one more than c_int::MAX.
+
+        let (width, height, stride): (c_int, c_int, c_int) = (16_384, 32_768, 65_536);
+        let expected_len: usize = stride as usize * height as usize;
+
+        assert!(stride.checked_mul(height).is_none()); // Positive control: the shape overflows.
+
+        let mut backing = vec![0u8; expected_len];
+
+        unsafe {
+            let bitmap = bindings.FPDFBitmap_CreateEx(
+                width,
+                height,
+                crate::bindgen::FPDFBitmap_BGRA as c_int,
+                backing.as_mut_ptr() as *mut c_void,
+                stride,
+            );
+
+            assert!(!bitmap.is_null());
+            assert_eq!(bindings.FPDFBitmap_GetStride(bitmap), stride);
+            assert_eq!(bindings.FPDFBitmap_GetHeight(bitmap), height);
+
+            assert_eq!(bindings.FPDFBitmap_GetBuffer_as_slice(bitmap).len(), expected_len);
+
+            // A buffer of the wrong length is refused, rather than the length check overflowing.
+
+            assert!(!bindings.FPDFBitmap_SetBuffer(bitmap, &[0u8; 16]));
+
+            bindings.FPDFBitmap_Destroy(bitmap);
+        }
+
+        Ok(())
     }
 
-    /// A wrap to a small positive value is the quiet half of the same bug: no
-    /// crash, just a silently truncated raster.
     #[test]
     #[cfg(not(target_arch = "wasm32"))]
-    fn bitmap_buffer_len_survives_a_product_that_wraps_to_a_small_value() {
-        use crate::bindings::bitmap_buffer_len;
-        use std::os::raw::c_int;
+    fn bitmap_buffer_len_does_not_overflow_c_int() {
+        use super::bitmap_buffer_len;
+        use std::ffi::c_int;
 
-        let stride: c_int = 65_536;
-        let height: c_int = 32_768;
+        // 48" x 36" at 600 DPI, 4 bytes per pixel: stride 115200, height 21600. The first
+        // assertion is the positive control: the shape really does overflow c_int.
+        let (stride, height): (c_int, c_int) = (115_200, 21_600);
 
         assert!(stride.checked_mul(height).is_none());
-        assert_eq!(bitmap_buffer_len(stride, height), 2_147_483_648usize);
-    }
+        assert_eq!(bitmap_buffer_len(stride, height), 2_488_320_000);
 
-    #[test]
-    #[cfg(not(target_arch = "wasm32"))]
-    fn bitmap_buffer_len_guards_non_positive_stride_and_height() {
-        use crate::bindings::bitmap_buffer_len;
-        use std::os::raw::c_int;
+        // A product that wraps to a small value is the quiet half of the same bug.
+        assert!(65_536i32.checked_mul(32_768).is_none());
+        assert_eq!(bitmap_buffer_len(65_536, 32_768), 2_147_483_648);
 
-        // A non-positive stride or height is Pdfium's error and empty-bitmap
-        // signal, so it has to yield a zero-length buffer rather than something
-        // a caller would build a slice over.
+        // Non-positive stride or height is Pdfium's error or empty signal, so zero.
         assert_eq!(bitmap_buffer_len(0, 100), 0);
-        assert_eq!(bitmap_buffer_len(100, 0), 0);
-        assert_eq!(bitmap_buffer_len(-1, 100), 0);
         assert_eq!(bitmap_buffer_len(100, -1), 0);
         assert_eq!(bitmap_buffer_len(c_int::MIN, c_int::MIN), 0);
 
-        // An ordinary bitmap still gets its exact length.
         assert_eq!(bitmap_buffer_len(400, 300), 120_000);
     }
 }

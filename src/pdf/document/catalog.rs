@@ -9,6 +9,7 @@ use std::marker::PhantomData;
 
 #[cfg(any(
     feature = "pdfium_future",
+    feature = "pdfium_8085",
     feature = "pdfium_7881",
     feature = "pdfium_7763"
 ))]
@@ -50,23 +51,18 @@ impl<'a> PdfCatalog<'a> {
     /// section 10.7, starting on page 883.
     #[inline]
     pub fn is_tagged(&self) -> bool {
-        #[cfg(feature = "thread_safe")]
-        let _ffi = crate::pdfium::FfiLock::acquire();
-
         self.bindings()
             .is_true(unsafe { self.bindings().FPDFCatalog_IsTagged(self.document_handle()) })
     }
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763"
     ))]
     /// Returns the language set in the catalog of the containing [PdfDocument], if any.
     pub fn get_language(&self) -> Result<String, PdfiumError> {
-        #[cfg(feature = "thread_safe")]
-        let _ffi = crate::pdfium::FfiLock::acquire();
-
         // Retrieving the bookmark title from Pdfium is a two-step operation. First, we call
         // FPDFBookmark_GetTitle() with a null buffer; this will retrieve the length of
         // the bookmark title in bytes. If the length is zero, then there is no title.
@@ -110,6 +106,7 @@ impl<'a> PdfCatalog<'a> {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -122,9 +119,6 @@ impl<'a> PdfCatalog<'a> {
     ))]
     /// Sets the language of the containing [PdfDocument] to the given value.
     pub fn set_language(&mut self, language: impl ToString) -> Result<(), PdfiumError> {
-        #[cfg(feature = "thread_safe")]
-        let _ffi = crate::pdfium::FfiLock::acquire();
-
         if self.bindings().is_true(unsafe {
             self.bindings()
                 .FPDFCatalog_SetLanguage_str(self.document_handle(), language.to_string().as_str())

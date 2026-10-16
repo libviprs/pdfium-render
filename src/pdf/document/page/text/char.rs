@@ -19,6 +19,7 @@ use std::os::raw::c_void;
 
 #[cfg(any(
     feature = "pdfium_future",
+    feature = "pdfium_8085",
     feature = "pdfium_7881",
     feature = "pdfium_7763",
     feature = "pdfium_7543",
@@ -94,9 +95,6 @@ impl<'a> PdfPageTextChar<'a> {
     /// Unicode literal, use the [PdfPageTextChar::unicode_string] function.
     #[inline]
     pub fn unicode_value(&self) -> u32 {
-        #[cfg(feature = "thread_safe")]
-        let _ffi = crate::pdfium::FfiLock::acquire();
-
         unsafe {
             self.bindings()
                 .FPDFText_GetUnicode(self.text_page_handle, self.index)
@@ -143,9 +141,6 @@ impl<'a> PdfPageTextChar<'a> {
     /// [PdfPageTextChar::scaled_font_size] function.
     #[inline]
     pub fn unscaled_font_size(&self) -> PdfPoints {
-        #[cfg(feature = "thread_safe")]
-        let _ffi = crate::pdfium::FfiLock::acquire();
-
         unsafe {
             PdfPoints::new(
                 self.bindings()
@@ -156,9 +151,6 @@ impl<'a> PdfPageTextChar<'a> {
 
     /// Returns the font name and raw font descriptor flags for the font applied to this character.
     fn font(&self) -> (Option<String>, FpdfFontDescriptorFlags) {
-        #[cfg(feature = "thread_safe")]
-        let _ffi = crate::pdfium::FfiLock::acquire();
-
         // Retrieving the font name from Pdfium is a two-step operation. First, we call
         // FPDFText_GetFontInfo() with a null buffer; this will retrieve the length of
         // the font name in bytes. If the length is zero, then there is no font name.
@@ -224,9 +216,6 @@ impl<'a> PdfPageTextChar<'a> {
     /// Pdfium may not reliably return the correct value of this property for built-in fonts.
     #[inline]
     pub fn font_weight(&self) -> Option<PdfFontWeight> {
-        #[cfg(feature = "thread_safe")]
-        let _ffi = crate::pdfium::FfiLock::acquire();
-
         PdfFontWeight::from_pdfium(unsafe {
             self.bindings()
                 .FPDFText_GetFontWeight(self.text_page_handle, self.index)
@@ -358,6 +347,7 @@ impl<'a> PdfPageTextChar<'a> {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -371,9 +361,6 @@ impl<'a> PdfPageTextChar<'a> {
     ))]
     /// Returns the page text object that contains this character.
     pub fn text_object(&self) -> Result<PdfPageTextObject<'_>, PdfiumError> {
-        #[cfg(feature = "thread_safe")]
-        let _ffi = crate::pdfium::FfiLock::acquire();
-
         let object_handle = unsafe {
             self.bindings()
                 .FPDFText_GetTextObject(self.text_page_handle(), self.index)
@@ -393,6 +380,7 @@ impl<'a> PdfPageTextChar<'a> {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -428,9 +416,6 @@ impl<'a> PdfPageTextChar<'a> {
     ))]
     /// Returns the text rendering mode for this character.
     pub fn render_mode(&self) -> Result<PdfPageTextRenderMode, PdfiumError> {
-        #[cfg(feature = "thread_safe")]
-        let _ffi = crate::pdfium::FfiLock::acquire();
-
         PdfPageTextRenderMode::from_pdfium(unsafe {
             self.bindings()
                 .FPDFText_GetTextRenderMode(self.text_page_handle, self.index)
@@ -439,9 +424,6 @@ impl<'a> PdfPageTextChar<'a> {
 
     /// Returns the fill color applied to this character.
     pub fn fill_color(&self) -> Result<PdfColor, PdfiumError> {
-        #[cfg(feature = "thread_safe")]
-        let _ffi = crate::pdfium::FfiLock::acquire();
-
         let mut r = 0;
         let mut g = 0;
         let mut b = 0;
@@ -474,9 +456,6 @@ impl<'a> PdfPageTextChar<'a> {
 
     /// Returns the stroke color applied to this character.
     pub fn stroke_color(&self) -> Result<PdfColor, PdfiumError> {
-        #[cfg(feature = "thread_safe")]
-        let _ffi = crate::pdfium::FfiLock::acquire();
-
         let mut r = 0;
         let mut g = 0;
         let mut b = 0;
@@ -516,9 +495,6 @@ impl<'a> PdfPageTextChar<'a> {
     /// Returns the rotation angle of this character, expressed in radians.
     #[inline]
     pub fn angle_radians(&self) -> Result<f32, PdfiumError> {
-        #[cfg(feature = "thread_safe")]
-        let _ffi = crate::pdfium::FfiLock::acquire();
-
         let result = unsafe {
             self.bindings()
                 .FPDFText_GetCharAngle(self.text_page_handle, self.index)
@@ -537,9 +513,6 @@ impl<'a> PdfPageTextChar<'a> {
     /// To return a loose bounding box that contains the entire glyph bounds, use the
     /// [PdfPageTextChar::loose_bounds] function.
     pub fn tight_bounds(&self) -> Result<PdfRect, PdfiumError> {
-        #[cfg(feature = "thread_safe")]
-        let _ffi = crate::pdfium::FfiLock::acquire();
-
         let mut left = 0.0;
         let mut bottom = 0.0;
         let mut right = 0.0;
@@ -564,7 +537,7 @@ impl<'a> PdfPageTextChar<'a> {
                 right: right as f32,
                 bottom: bottom as f32,
             },
-            &*self.bindings(),
+            self.bindings(),
         )
     }
 
@@ -573,9 +546,6 @@ impl<'a> PdfPageTextChar<'a> {
     /// To return a tight bounding box that takes this character's specific shape into
     /// account, use the [PdfPageTextChar::tight_bounds] function.
     pub fn loose_bounds(&self) -> Result<PdfRect, PdfiumError> {
-        #[cfg(feature = "thread_safe")]
-        let _ffi = crate::pdfium::FfiLock::acquire();
-
         let mut bounds = FS_RECTF {
             left: 0.0,
             top: 0.0,
@@ -591,14 +561,11 @@ impl<'a> PdfPageTextChar<'a> {
             )
         };
 
-        PdfRect::from_pdfium_as_result(result, bounds, &*self.bindings())
+        PdfRect::from_pdfium_as_result(result, bounds, self.bindings())
     }
 
     /// Returns the current raw transformation matrix for this character.
     fn get_matrix_impl(&self) -> Result<PdfMatrix, PdfiumError> {
-        #[cfg(feature = "thread_safe")]
-        let _ffi = crate::pdfium::FfiLock::acquire();
-
         let mut matrix = FS_MATRIX {
             a: 0.0,
             b: 0.0,
@@ -628,9 +595,6 @@ impl<'a> PdfPageTextChar<'a> {
 
     /// Returns the origin x and y positions of this character relative to its containing page.
     pub fn origin(&self) -> Result<(PdfPoints, PdfPoints), PdfiumError> {
-        #[cfg(feature = "thread_safe")]
-        let _ffi = crate::pdfium::FfiLock::acquire();
-
         let mut x = 0.0;
 
         let mut y = 0.0;
@@ -679,9 +643,6 @@ impl<'a> PdfPageTextChar<'a> {
     /// certain spacing, breaking, and justification-related characters.
     #[inline]
     pub fn is_generated(&self) -> Result<bool, PdfiumError> {
-        #[cfg(feature = "thread_safe")]
-        let _ffi = crate::pdfium::FfiLock::acquire();
-
         match unsafe {
             self.bindings()
                 .FPDFText_IsGenerated(self.text_page_handle(), self.index)
@@ -696,6 +657,7 @@ impl<'a> PdfPageTextChar<'a> {
 
     #[cfg(any(
         feature = "pdfium_future",
+        feature = "pdfium_8085",
         feature = "pdfium_7881",
         feature = "pdfium_7763",
         feature = "pdfium_7543",
@@ -723,9 +685,6 @@ impl<'a> PdfPageTextChar<'a> {
     /// Returns `true` if this character is recognized as a hyphen by Pdfium.
     #[inline]
     pub fn is_hyphen(&self) -> Result<bool, PdfiumError> {
-        #[cfg(feature = "thread_safe")]
-        let _ffi = crate::pdfium::FfiLock::acquire();
-
         match unsafe {
             self.bindings()
                 .FPDFText_IsHyphen(self.text_page_handle(), self.index)
