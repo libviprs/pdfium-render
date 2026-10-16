@@ -12,7 +12,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  PDFIUM_RELEASE_TAG: 8085 # https://github.com/bblanchon/pdfium-binaries/releases/tag/chromium%2F8085
+  PDFIUM_RELEASE_TAG: 8085 # https://github.com/libviprs/libviprs-dep/releases/tag/pdfium-8085 (bblanchon/pdfium-binaries skipped 8085)
 
 jobs:
   build:
@@ -24,9 +24,9 @@ jobs:
     - name: Build
       run: rustup update && cargo build --verbose
     - name: Download Pdfium
-      run: curl -L -o "pdfium.tgz" "https://github.com/bblanchon/pdfium-binaries/releases/download/chromium/${PDFIUM_RELEASE_TAG}/pdfium-linux-x64.tgz"
+      run: curl -L -o "pdfium.tgz" "https://github.com/libviprs/libviprs-dep/releases/download/pdfium-${PDFIUM_RELEASE_TAG}/pdfium-linux-x64.tgz"
     - name: Unpack Pdfium
-      run: mkdir pdfium && tar -xvzf pdfium.tgz -C pdfium
+      run: mkdir pdfium && tar -xvzf pdfium.tgz --strip-components=1 -C pdfium
     - name: Install Pdfium
       run: cp pdfium/lib/libpdfium.so . && export LD_LIBRARY_PATH="./"
     - name: Run tests
