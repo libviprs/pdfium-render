@@ -670,6 +670,17 @@ impl<'a> PdfPage<'a> {
             if let Some(form_handle) = self.form_handle {
                 // Render user-supplied form data, if any, as an overlay on top of the page.
 
+                // Each binding call takes the thread marshall lock on its own, but pdfium keeps the
+                // form highlight color as global state, so setting it and drawing with it have to
+                // happen as one step or a concurrent render can change the color in between.
+                #[cfg(feature = "thread_safe")]
+                static FORM_RENDER_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+                #[cfg(feature = "thread_safe")]
+                let _form_render_guard = FORM_RENDER_LOCK
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+
                 if let Some(form_field_highlight) = settings.form_field_highlight.as_ref() {
                     for (form_field_type, (color, alpha)) in form_field_highlight.iter() {
                         unsafe {
